@@ -1,0 +1,12 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "MavDrone"
+include ':app'
+include ':uxsdk'
+include ':mavlink'

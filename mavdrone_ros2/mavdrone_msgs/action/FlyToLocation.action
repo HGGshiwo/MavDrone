@@ -1,0 +1,12 @@
+float64 longitude
+float64 latitude
+float32 altitude
+float32 heading_deg
+float32 speed
+int16 gimbal_yaw
+int16 gimbal_pitch
+---
+bool success
+string message
+---
+float32 distance_to_goal

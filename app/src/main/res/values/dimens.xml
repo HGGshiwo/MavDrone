@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources>
+    <dimen name="mavlink_dialog_padding">5dp</dimen>
+    <dimen name="mavlink_dialog_margin">10dp</dimen>
+    <dimen name="mavlink_dialog_width">400dp</dimen>
+    <dimen name="mavlink_dialog_height">300dp</dimen>
+    <dimen name="mavlink_dialog_button_text_size">16sp</dimen>
+
+    <dimen name="mavlink_row_height">45dp</dimen>
+    <dimen name="mavlink_seek_bar_margin">10dp</dimen>
+    <dimen name="mavlink_row_margin">5dp</dimen>
+    <dimen name="mavlink_row_margin_double">10dp</dimen>
+    <dimen name="mavlink_header_text_size">15sp</dimen>
+    <dimen name="mavlink_row_text_size">14sp</dimen>
+</resources>

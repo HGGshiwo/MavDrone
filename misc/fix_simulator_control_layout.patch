@@ -1,0 +1,20 @@
+Subject: [PATCH] Fix SimulatorControlWidget layout
+Source: https://github.com/dji-sdk/Mobile-SDK-Android-V5/pull/477
+---
+Index: uxsdk/src/main/res/layout/uxsdk_widget_simulator_control.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/uxsdk/src/main/res/layout/uxsdk_widget_simulator_control.xml b/uxsdk/src/main/res/layout/uxsdk_widget_simulator_control.xml
+--- a/uxsdk/src/main/res/layout/uxsdk_widget_simulator_control.xml	(revision da79e7a2fa05b9c2808d76151bb450d0a14b8c10)
++++ b/uxsdk/src/main/res/layout/uxsdk_widget_simulator_control.xml	(date 1740148748857)
+@@ -299,7 +299,7 @@
+                 app:layout_constraintBottom_toTopOf="@+id/textview_simulator_world_y_value"
+                 app:layout_constraintLeft_toRightOf="@+id/textview_simulator_world_x_label"
+                 app:layout_constraintRight_toRightOf="parent"
+-                app:layout_constraintTop_toTopOf="parent" />
++                app:layout_constraintTop_toTopOf="@+id/textview_simulator_world_x_label" />
+ 
+             <TextView
+                 android:id="@+id/textview_simulator_world_y_label"

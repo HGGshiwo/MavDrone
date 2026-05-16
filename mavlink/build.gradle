@@ -1,0 +1,32 @@
+plugins {
+    alias libs.plugins.android.gradle.library
+    alias libs.plugins.jetbrains.kotlin.android
+}
+
+
+android {
+    namespace 'io.dronefleet.mavlink'
+    compileSdk 33
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += "src/main/java-gen"
+        }
+    }
+
+}
+
+
+dependencies {
+    // MAVLink
+    implementation libs.reactivex.rxjava3
+
+    testImplementation libs.junit.junit
+    androidTestImplementation libs.androidx.test.ext
+    androidTestImplementation libs.androidx.test.espresso.core
+}

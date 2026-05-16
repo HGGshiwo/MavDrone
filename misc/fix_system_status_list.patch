@@ -1,0 +1,137 @@
+From 0c6f1b2f7c34b2c3b09a4c7c6acdd85e947c92cb Mon Sep 17 00:00:00 2025
+Subject: [PATCH] Fix SystemStatusWidget bitmask flag values
+---
+ uxsdk/src/main/java/dji/v5/ux/core/panel/systemstatus/SystemStatusSmartListModel.kt | 38 ++++++++++++------------
+ uxsdk/src/main/res/values/attrs.xml                                                  | 26 ++++++++--------
+ 2 files changed, 36 insertions(+), 28 deletions(-)
+
+diff --git a/uxsdk/src/main/java/dji/v5/ux/core/panel/systemstatus/SystemStatusSmartListModel.kt b/uxsdk/src/main/java/dji/v5/ux/core/panel/systemstatus/SystemStatusSmartListModel.kt
+index 076dbc892a..e3a6b2a7f1 100644
+--- a/uxsdk/src/main/java/dji/v5/ux/core/panel/systemstatus/SystemStatusSmartListModel.kt
++++ b/uxsdk/src/main/java/dji/v5/ux/core/panel/systemstatus/SystemStatusSmartListModel.kt
+@@ -177,72 +177,72 @@
+         /**
+          * Maps to [RCStickModeListItemWidget].
+          */
+-        RC_STICK_MODE("rc_stick_mode", 2),
++        RC_STICK_MODE("rc_stick_mode", 1 shl 1),
+
+         /**
+          * Maps to [RCBatteryListItemWidget].
+          */
+-        RC_BATTERY("rc_battery", 3),
++        RC_BATTERY("rc_battery", 1 shl 2),
+
+         /**
+          * Maps to [AircraftBatteryTemperatureListItemWidget].
+          */
+-        AIRCRAFT_BATTERY_TEMPERATURE("aircraft_battery_temperature", 4),
++        AIRCRAFT_BATTERY_TEMPERATURE("aircraft_battery_temperature", 1 shl 3),
+
+         /**
+          * Maps to [SDCardStatusListItemWidget].
+          */
+-        SD_CARD_STATUS("sd_card_status", 5),
++        SD_CARD_STATUS("sd_card_status", 1 shl 4),
+
+         /**
+          * Maps to [EMMCStatusListItemWidget].
+          */
+-        EMMC_STATUS("emmc_status", 6),
++        EMMC_STATUS("emmc_status", 1 shl 5),
+
+         /**
+          * Maps to [MaxAltitudeListItemWidget].
+          */
+-        MAX_ALTITUDE("max_altitude", 7),
++        MAX_ALTITUDE("max_altitude", 1 shl 6),
+
+         /**
+          * Maps to [MaxFlightDistanceListItemWidget].
+          */
+-        MAX_FLIGHT_DISTANCE("max_flight_distance", 8),
++        MAX_FLIGHT_DISTANCE("max_flight_distance", 1 shl 7),
+
+         /**
+          * Maps to [TravelModeListItemWidget].
+          */
+-        TRAVEL_MODE("travel_mode", 9),
++        TRAVEL_MODE("travel_mode", 1 shl 8),
+
+         /**
+          * Maps to [UnitModeListItemWidget].
+          */
+-        UNIT_MODE("unit_mode", 10),
++        UNIT_MODE("unit_mode", 1 shl 9),
+
+         /**
+          * Maps to [SSDStatusListItemWidget].
+          */
+-        SSD_STATUS("ssd_status", 11),
++        SSD_STATUS("ssd_status", 1 shl 10),
+
+         /**
+          * Maps to [NoviceModeListItemWidget].
+          */
+-        NOVICE_MODE("novice_mode", 12),
++        NOVICE_MODE("novice_mode", 1 shl 11),
+
+         /**
+          * Maps to [OverviewListItemWidget].
+          */
+-        OVERVIEW_STATUS("overview_status", 13),
++        OVERVIEW_STATUS("overview_status", 1 shl 12),
+
+         /**
+          * Maps to [ReturnToHomeAltitudeListItemWidget].
+          */
+-        RTH_ALTITUDE("rth_altitude", 14),
++        RTH_ALTITUDE("rth_altitude", 1 shl 13),
+
+         /**
+          * Maps to [ObstacleAvoidanceListItemWidget].
+          */
+-        OBSTACLE_AVOIDANCE("obstacle_avoidance", 15);
++        OBSTACLE_AVOIDANCE("obstacle_avoidance", 1 shl 14);
+
+         /**
+          * Checks if the item is excluded given the flag [excludeItems].
+diff --git a/uxsdk/src/main/res/values/attrs.xml b/uxsdk/src/main/res/values/attrs.xml
+index 167ce583ee..aa21cbff2a 100644
+--- a/uxsdk/src/main/res/values/attrs.xml
++++ b/uxsdk/src/main/res/values/attrs.xml
+@@ -637,19 +637,19 @@
+         <attr name="uxsdk_excludeItem">
+             <flag name="flight_mode" value="1" />
+             <flag name="rc_stick_mode" value="2" />
+-            <flag name="rc_battery" value="3" />
+-            <flag name="aircraft_battery_temperature" value="4" />
+-            <flag name="sd_card_status" value="5" />
+-            <flag name="emmc_status" value="6" />
+-            <flag name="max_altitude" value="7" />
+-            <flag name="max_flight_distance" value="8" />
+-            <flag name="travel_mode" value="9" />
+-            <flag name="unit_mode" value="10" />
+-            <flag name="ssd_status" value="11" />
+-            <flag name="novice_mode" value="12" />
+-            <flag name="overview_status" value="13" />
+-            <flag name="rth_altitude" value="14" />
+-            <flag name="obstacle_avoidance" value="15" />
++            <flag name="rc_battery" value="4" />
++            <flag name="aircraft_battery_temperature" value="8" />
++            <flag name="sd_card_status" value="16" />
++            <flag name="emmc_status" value="32" />
++            <flag name="max_altitude" value="64" />
++            <flag name="max_flight_distance" value="128" />
++            <flag name="travel_mode" value="256" />
++            <flag name="unit_mode" value="512" />
++            <flag name="ssd_status" value="1024" />
++            <flag name="novice_mode" value="2048" />
++            <flag name="overview_status" value="4096" />
++            <flag name="rth_altitude" value="8192" />
++            <flag name="obstacle_avoidance" value="16384" />
+         </attr>
+     </declare-styleable>
+
+--
+2.47.0

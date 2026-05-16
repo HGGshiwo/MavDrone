@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <attr name="iconBackground" format="reference" />
+    <attr name="widgetTitleTextAppearance" format="reference" />
+    <attr name="widgetTitleTextSize" format="dimension" />
+    <attr name="widgetTitleTextColor" format="color|reference" />
+    <attr name="widgetTitleBackground" format="reference" />
+
+    <attr name="buttonBackground" format="reference" />
+    <attr name="buttonTextSize" format="dimension" />
+    <attr name="buttonTextColor" format="color|reference" />
+    <attr name="buttonTextAppearance" format="reference" />
+
+    <attr name="labelsTextSize" format="dimension" />
+    <attr name="labelsTextColor" format="color" />
+    <attr name="labelsBackground" format="reference" />
+    <attr name="labelsTextAppearance" format="reference" />
+
+    <attr name="mavlinkConnectedIcon" format="reference" />
+    <attr name="mavlinkServerRunningDrawable" format="reference" />
+    <attr name="mavlinkInactiveDrawable" format="reference" />
+    <attr name="onStateChange" format="reference" />
+
+    <attr name="playDrawable" format="reference" />
+    <attr name="pauseDrawable" format="reference" />
+    <attr name="resumeDrawable" format="reference" />
+    <attr name="enableColor" format="color|reference" />
+    <attr name="disableColor" format="color|reference" />
+
+    <declare-styleable name="MavlinkIndicatorWidget">
+        <attr name="iconBackground" />
+        <attr name="mavlinkConnectedIcon" />
+        <attr name="mavlinkServerRunningDrawable" />
+        <attr name="mavlinkInactiveDrawable" />
+        <attr name="onStateChange" />
+    </declare-styleable>
+
+    <declare-styleable name="MavlinkControlWidget">
+        <attr name="mavlinkConnectedIcon" />
+        <attr name="mavlinkServerRunningDrawable" />
+        <attr name="mavlinkInactiveDrawable" />
+        <attr name="widgetTitleTextAppearance" />
+        <attr name="widgetTitleTextSize" />
+        <attr name="widgetTitleTextColor" />
+        <attr name="widgetTitleBackground" />
+        <attr name="labelsBackground" />
+        <attr name="labelsTextSize" />
+        <attr name="labelsTextColor" />
+        <attr name="labelsTextAppearance" />
+        <attr name="buttonBackground" />
+        <attr name="buttonTextSize" />
+        <attr name="buttonTextColor" />
+        <attr name="buttonTextAppearance" />
+        <attr name="valueBackground" format="reference" />
+        <attr name="valueTextSize" format="reference" />
+        <attr name="valueTextColor" format="reference" />
+        <attr name="valueTextAppearance" format="reference" />
+        <attr name="inputBackground" format="reference" />
+        <attr name="inputTextSize" format="reference" />
+        <attr name="inputTextColor" format="reference" />
+        <attr name="inputTextAppearance" format="reference" />
+        <attr name="headerBackground" format="reference" />
+        <attr name="headerTextSize" format="reference" />
+        <attr name="headerTextColor" format="reference" />
+        <attr name="headerTextAppearance" format="reference" />
+    </declare-styleable>
+
+    <declare-styleable name="CustomTopBarPanelWidget">
+        <!-- E.g., app:excludeItem="flight_mode|simulator_indicator" -->
+        <attr name="excludeTopBarItem">
+            <flag name="system_status" value="1" />
+            <flag name="device_health" value="2" />
+            <flag name="flight_mode" value="4" />
+            <flag name="simulator_indicator" value="8" />
+            <flag name="air_sense" value="16" />
+            <flag name="gps_signal" value="32" />
+            <flag name="vision" value="64" />
+            <flag name="rc_signal" value="128" />
+            <flag name="video_signal" value="256" />
+            <flag name="battery" value="512" />
+            <flag name="setting" value="1024" />
+            <flag name="connection" value="2048" />
+            <flag name="mavlink_indicator" value="4096" />
+        </attr>
+    </declare-styleable>
+
+    <declare-styleable name="MissionControlWidget">
+        <attr name="playDrawable" />
+        <attr name="pauseDrawable" />
+        <attr name="resumeDrawable" />
+        <attr name="enableColor" />
+        <attr name="disableColor" />
+    </declare-styleable>
+</resources>

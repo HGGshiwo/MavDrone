@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>m350_description</name>
+  <version>0.0.1</version>
+  <description>Simplified URDF of a DJI M350 drone with a Zenmuse P1 camera with the correct gimbal joints.</description>
+  <maintainer email="rick.vanessen@wur.nl">Rick van Essen</maintainer>
+  <license>AGPL-3.0-or-later</license>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>urdf</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

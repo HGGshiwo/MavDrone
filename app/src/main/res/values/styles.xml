@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="DialogTheme" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="colorAccent">@color/uxsdk_blue</item>
+        <item name="android:background">@color/uxsdk_black_70_percent</item>
+    </style>
+</resources>

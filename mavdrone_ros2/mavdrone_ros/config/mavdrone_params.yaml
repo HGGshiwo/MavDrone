@@ -1,0 +1,33 @@
+mavdrone:
+  ros__parameters:
+    address: "udp://:14540"
+    video_device: "stream"  # Or 'stream' to use RTSP stream
+    timeout: 8.0
+    start_attempts: 3
+    upload_attempts: 3
+    video_component_id: 100  # MAV_COMP_ID_CAMERA
+    video_stream_id: 0
+    
+    telemetry_update_rate: 0.05
+    livestream_update_rate: 0.1
+    transform_update_rate: 0.01
+
+    publish_gps: true
+    publish_attitude: true
+    publish_livestream: true
+    publish_transform: true
+
+    drone_hold_time: 2  # Time to hold position at each waypoint in seconds
+
+    base_frame_id: "mavdrone/base_link"
+    utm_frame_id: "utm"
+    roll_parent_frame_id: "mavdrone/roll_motor_link"
+    roll_child_frame_id: "mavdrone/roll_link"
+    pitch_parent_frame_id: "mavdrone/pitch_motor_link"
+    pitch_child_frame_id: "mavdrone/pitch_link"
+    yaw_parent_frame_id: "mavdrone/yaw_motor_link"
+    yaw_child_frame_id: "mavdrone/yaw_link"
+    
+    image_frame_id: "mavdrone/camera_optical_link"
+
+  

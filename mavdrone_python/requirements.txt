@@ -1,0 +1,6 @@
+mavsdk>=3.9.0
+numpy
+opencv-python
+pyproj
+
+mypy

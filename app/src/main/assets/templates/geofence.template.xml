@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<geofence>
+    {{#hasReturnPoint}}
+    {{#hasReturnPointAltitude}}
+    <return_point>{{returnPointLat}},{{returnPointLon}},{{returnPointAlt}}</return_point>
+    {{/hasReturnPointAltitude}}
+    {{^hasReturnPointAltitude}}
+    <return_point>{{returnPointLat}},{{returnPointLon}}</return_point>
+    {{/hasReturnPointAltitude}}
+    {{/hasReturnPoint}}
+
+    <items>
+        {{#items}}
+        <geofenceItem type="{{type}}" inclusion="{{inclusion}}">
+            {{#isCircle}}
+            <radius>{{radius}}</radius>
+            <center>{{centerLat}},{{centerLon}}</center>
+            {{/isCircle}}
+            {{#isPolygon}}
+            {{#vertices}}
+            <vertex>{{pointLat}},{{pointLon}}</vertex>
+            {{/vertices}}
+            {{/isPolygon}}
+        </geofenceItem>
+        {{/items}}
+    </items>
+</geofence>

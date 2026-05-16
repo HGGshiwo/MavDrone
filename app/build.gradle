@@ -1,0 +1,98 @@
+plugins {
+    alias libs.plugins.android.gradle.application
+    alias libs.plugins.jetbrains.kotlin.android
+    alias libs.plugins.jetbrains.kotlin.kapt
+    alias libs.plugins.jetbrains.kotlin.parcelize
+}
+
+android {
+    namespace 'nl.wur.mavdrone'
+    compileSdkVersion Integer.parseInt(project.ANDROID_COMPILE_SDK_VERSION) // MSDK supported version
+
+    defaultConfig {
+        applicationId "nl.wur.mavdrone"
+        minSdkVersion Integer.parseInt(project.ANDROID_MIN_SDK_VERSION)
+        targetSdkVersion Integer.parseInt(project.ANDROID_TARGET_SDK_VERSION)
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters 'arm64-v8a' // MSDK only supports arm64-v8a architecture
+        }
+
+        compileOptions {
+            sourceCompatibility JavaVersion.VERSION_1_8
+            targetCompatibility JavaVersion.VERSION_1_8
+        }
+
+        kotlinOptions{
+            jvmTarget = JavaVersion.VERSION_1_8
+            freeCompilerArgs += ["-Xjvm-default=all"]
+        }
+
+        buildFeatures {
+            viewBinding true
+            buildConfig true
+        }
+
+        // MSDK related so library
+        packagingOptions {
+            pickFirst 'lib/arm64-v8a/libc++_shared.so'
+            pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        }
+
+        // MSDK related so library
+        packagingOptions {
+            doNotStrip "*/*/libconstants.so"
+            doNotStrip "*/*/libdji_innertools.so"
+            doNotStrip "*/*/libdjibase.so"
+            doNotStrip "*/*/libDJICSDKCommon.so"
+            doNotStrip "*/*/libDJIFlySafeCore-CSDK.so"
+            doNotStrip "*/*/libdjifs_jni-CSDK.so"
+            doNotStrip "*/*/libDJIRegister.so"
+            doNotStrip "*/*/libdjisdk_jni.so"
+            doNotStrip "*/*/libDJIUpgradeCore.so"
+            doNotStrip "*/*/libDJIUpgradeJNI.so"
+            doNotStrip "*/*/libDJIWaypointV2Core-CSDK.so"
+            doNotStrip "*/*/libdjiwpv2-CSDK.so"
+            doNotStrip "*/*/libFlightRecordEngine.so"
+            doNotStrip "*/*/libvideo-framing.so"
+            doNotStrip "*/*/libwaes.so"
+            doNotStrip "*/*/libagora-rtsa-sdk.so"
+            doNotStrip "*/*/libc++.so"
+            doNotStrip "*/*/libc++_shared.so"
+            doNotStrip "*/*/libmrtc_28181.so"
+            doNotStrip "*/*/libmrtc_agora.so"
+            doNotStrip "*/*/libmrtc_core.so"
+            doNotStrip "*/*/libmrtc_core_jni.so"
+            doNotStrip "*/*/libmrtc_data.so"
+            doNotStrip "*/*/libmrtc_log.so"
+            doNotStrip "*/*/libmrtc_onvif.so"
+            doNotStrip "*/*/libmrtc_rtmp.so"
+            doNotStrip "*/*/libmrtc_rtsp.so"
+        }
+    }
+}
+
+dependencies {
+    implementation project(":uxsdk")
+    implementation project(":mavlink")
+
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.constraintlayout
+
+    implementation libs.google.material
+
+    implementation libs.locationtech.jts.core
+    implementation libs.spullara.mustache
+    implementation libs.jakewharton.timber
+
+    implementation libs.dji.aircraft
+    compileOnly libs.dji.aircraft.provided
+
+    testImplementation libs.junit.junit
+    androidTestImplementation libs.androidx.test.ext
+    androidTestImplementation libs.androidx.test.espresso.core
+}

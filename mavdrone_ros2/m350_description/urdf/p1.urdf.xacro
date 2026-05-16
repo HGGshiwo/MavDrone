@@ -1,0 +1,267 @@
+<?xml version="1.0"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:property name="motor_radius" value="0.02" />
+    <xacro:property name="skyport_length" value="0.018" />
+    <xacro:property name="motor_length" value="0.02" />
+    <xacro:property name="motor_length_short" value="0.016" />
+    <xacro:property name="frame_1_length" value="0.120" />
+    <xacro:property name="frame_1_width" value="0.02" />
+    <xacro:property name="frame_1_height" value="0.014" />
+    <xacro:property name="frame_2_length" value="0.09" />
+    <xacro:property name="frame_3_length" value="0.122" />
+    <xacro:property name="frame_3_width" value="0.006" />
+    <xacro:property name="frame_3_height" value="0.02" />
+    <xacro:property name="frame_4_length" value="0.085" />
+    <xacro:property name="square_motor_size" value="0.046" />
+    <xacro:property name="camera_sensor_width" value="0.084" />
+    <xacro:property name="camera_sensor_height" value="0.084" />
+    <xacro:property name="camera_sensor_length" value="0.06" />
+    <xacro:property name="camera_lens_radius" value="0.028" />
+    <xacro:property name="camera_lens_length" value="0.07" />
+
+    <material name="camera_body_color">
+        <color rgba="0.1 0.1 0.1 1" />
+    </material>
+
+    <xacro:macro name="p1" params="parent xyz rpy">
+        <link name="skyport_link" />
+
+        <joint name="skyport_joint" type="fixed">
+            <origin xyz="${xyz}" rpy="${rpy}" />
+            <parent link="${parent}" />
+            <child link="skyport_link" />
+        </joint>
+
+        <link name="yaw_motor_link">
+            <visual>
+                <origin xyz="0 0 ${skyport_length/2}" rpy="0 0 0" />
+                <geometry>
+                    <cylinder radius="${motor_radius}" length="${skyport_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+
+        </link>
+
+        <joint name="yaw_motor_joint" type="fixed">
+            <origin xyz="0 0 -${skyport_length}" rpy="0 0 0" />
+            <parent link="skyport_link" />
+            <child link="yaw_motor_link" />
+        </joint>
+
+        <link name="yaw_link">
+            <visual>
+                <origin xyz="0 0 -${motor_length/2}" rpy="0 0 0" />
+                <geometry>
+                    <cylinder radius="${motor_radius}" length="${motor_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="yaw_joint" type="continuous">
+            <parent link="skyport_link" />
+            <child link="yaw_link" />
+            <axis xyz="0 0 -1" />
+        </joint>
+
+        <link name="frame_1">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <box size="${frame_1_width} ${frame_1_length} ${frame_1_height}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="frame_1_joint" type="fixed">
+            <parent link="yaw_link" />
+            <child link="frame_1" />
+            <origin xyz="0 -${(frame_1_length/2)-0.03} -${motor_length-(frame_1_height/2)-0.001}"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="frame_2">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <box size="${frame_1_width} ${frame_1_height} ${frame_2_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="frame_2_joint" type="fixed">
+            <parent link="frame_1" />
+            <child link="frame_2" />
+            <origin
+                xyz="0 -${(frame_1_length/2)-(frame_1_height/2)} ${(frame_1_height/2)-(frame_2_length/2)}"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="roll_motor_link">
+            <visual>
+                <origin xyz="0 -${motor_length/2} 0" rpy="${pi/2} 0 0" />
+                <geometry>
+                    <cylinder radius="${motor_radius}" length="${motor_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="roll_motor_joint" type="fixed">
+            <parent link="frame_2" />
+            <child link="roll_motor_link" />
+            <origin xyz="0 ${motor_length-(frame_1_height/2)} -${frame_2_length/2}"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="roll_link">
+            <visual>
+                <origin xyz="0 ${motor_length/2} 0" rpy="${pi/2} 0 0" />
+                <geometry>
+                    <cylinder radius="${motor_radius}" length="${motor_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="roll_joint" type="continuous">
+            <parent link="roll_motor_link" />
+            <child link="roll_link" />
+            <axis xyz="0 0 1" />
+        </joint>
+
+        <link name="frame_3">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <box size="${frame_3_length} ${frame_3_width} ${frame_3_height}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="frame_3_joint" type="fixed">
+            <parent link="roll_link" />
+            <child link="frame_3" />
+            <origin xyz="0 ${(motor_length-(frame_3_width/2))} 0"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="frame_4">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <box size="${frame_3_width} ${frame_4_length} ${frame_3_height}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="frame_4_joint" type="fixed">
+            <parent link="frame_3" />
+            <child link="frame_4" />
+            <origin
+                xyz="${(frame_3_length/2)-(frame_3_width/2)} ${(frame_4_length/2)-(frame_3_width/2)} 0"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="frame_5">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <box size="${frame_3_width} ${frame_4_length} ${frame_3_height}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="frame_5_joint" type="fixed">
+            <parent link="frame_3" />
+            <child link="frame_5" />
+            <origin
+                xyz="-${(frame_3_length/2)-(frame_3_width/2)} ${(frame_4_length/2)-(frame_3_width/2)} 0"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="pitch_motor_link">
+            <visual>
+                <origin xyz="${motor_length/2} 0 0" rpy="0 ${pi/2} 0" />
+                <geometry>
+                    <cylinder radius="${motor_radius}" length="${motor_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="pitch_motor_link" type="fixed">
+            <parent link="frame_4" />
+            <child link="pitch_motor_link" />
+            <origin xyz="-${motor_length_short-(frame_3_width/2)} ${frame_4_length/2} 0"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="pitch_link">
+            <visual>
+                <origin xyz="-${motor_length_short/2} 0 0" rpy="0 ${pi/2} 0" />
+                <geometry>
+                    <box size="${square_motor_size} ${square_motor_size} ${motor_length_short}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="pitch_joint" type="continuous">
+            <parent link="pitch_motor_link" />
+            <child link="pitch_link" />
+            <axis xyz="0 1 0" />
+        </joint>
+
+        <link name="camera_sensor_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <box
+                        size="${camera_sensor_width} ${camera_sensor_length} ${camera_sensor_height}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="camera_sensor_joint" type="fixed">
+            <parent link="pitch_link" />
+            <child link="camera_sensor_link" />
+            <origin
+                xyz="-${(camera_sensor_width/2)+motor_length_short} -${camera_sensor_length/2} 0"
+                rpy="0 0 0" />
+        </joint>
+
+        <link name="camera_lens_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
+                <geometry>
+                    <cylinder radius="${camera_lens_radius}" length="${camera_lens_length}" />
+                </geometry>
+                <material name="camera_body_color" />
+            </visual>
+        </link>
+
+        <joint name="camera_lens_joint" type="fixed">
+            <parent link="camera_sensor_link" />
+            <child link="camera_lens_link" />
+            <origin xyz="0 ${(camera_sensor_length/2)+(camera_lens_length/2)} 0" rpy="0 0 0" />
+        </joint>
+
+        <link name="camera_optical_link" />
+
+        <joint name="camera_optical_joint" type="fixed">
+            <parent link="camera_lens_link" />
+            <child link="camera_optical_link" />
+            <origin xyz="0 -${camera_lens_length/2} 0" rpy="-${pi/2} 0 0" />
+        </joint>
+
+    </xacro:macro>
+</robot>

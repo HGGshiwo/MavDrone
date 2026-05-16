@@ -1,0 +1,30 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://maven.fabric.io/public' }
+        maven { url 'https://plugins.gradle.org/m2/' }
+        maven { url 'https://dl.bintray.com/kotlin/kotlin-eap' }
+    }
+}
+
+allprojects {
+    repositories {
+        maven {
+            url REPO_MAVEN2
+        }
+        google()
+        mavenCentral()
+        maven { url KOTLIN_MAVEN }
+        maven { url JITPACK_MAVEN_URL }
+        repositories {
+            flatDir {
+                dirs new File(rootProject.projectDir.getAbsolutePath() + '/libs')
+            }
+        }
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}

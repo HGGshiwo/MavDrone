@@ -1,0 +1,19 @@
+{
+    "notebook.formatOnSave.enabled": true,
+    "notebook.codeActionsOnSave": {
+      "notebook.source.organizeImports": "explicit"
+    },
+    "[python]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "charliermarsh.ruff",
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+      }
+    },    
+    "python.autoComplete.extraPaths": [
+        "/home/rick/AndroidStudioProjects/MavlinkDJIDrone/python"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/rick/AndroidStudioProjects/MavlinkDJIDrone/python"
+    ]
+}

@@ -1,0 +1,50 @@
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="mavdrone_app_name">MavDrone</string>
+
+    <string name="mavlink_widget_title">Mavlink Status</string>
+    <string name="mavlink_widget_connection_title">Connection</string>
+    <string name="mavlink_widget_stream_title">Stream</string>
+    <string name="mavlink_widget_port">Port</string>
+    <string name="mavlink_widget_system_id">System id</string>
+    <string name="mavlink_widget_max_missed_heartbeats">Max missed heartbeats</string>
+    <string name="mavlink_widget_exp_heartbeat_interval">Exp heartbeat interval</string>
+    <string name="mavlink_widget_stream_autostart">Automatically start stream</string>
+    <string name="mavlink_widget_port_hint">Port (default 5760)</string>
+    <string name="mavlink_widget_system_id_hint">System id (1 – 255)</string>
+    <string name="mavlink_widget_max_missing_heartbeats_hint">Missed heartbeats (0 – 10)</string>
+    <string name="mavlink_widget_exp_heartbeat_interval_hint">Expected interval (ms)</string>
+    <string name="mavlink_widget_stream_port">Port</string>
+    <string name="mavlink_widget_username">Username</string>
+    <string name="mavlink_widget_password">Password</string>
+    <string name="mavlink_widget_stream_port_hint">Port (default 8554)</string>
+    <string name="mavlink_widget_username_hint">Username</string>
+    <string name="mavlink_widget_password_hint">Password</string>
+    <string name="mavlink_widget_save">Save</string>
+    <string name="mavlink_widget_save_success">Successfully saved Mavlink connection parameters</string>
+    <string name="mavlink_widget_connection_details_table_host_ip">Server address</string>
+    <string name="mavlink_widget_connection_details_table_gcs_ips">GCS addresses</string>
+    <string name="mavlink_widget_connection_details_connected_components">Connected components</string>
+    <string name="mavlink_widget_connection_details_table_waypoint_mission">Waypoint mission</string>
+    <string name="mavlink_widget_connection_details_table_geofence_mission">Geofence mission</string>
+    <string name="mavlink_widget_connection_details_table_status">Status</string>
+    <string name="mavlink_widget_input_error">Enter the values for the Mavlink connection</string>
+    <string name="mavlink_widget_null_string">N/A</string>
+    <string name="mavlink_widget_ok">OK</string>
+
+    <string name="mavlink_service_notification_title">MAVLink connection</string>
+    <string name="mavlink_service_notification_connected">Connected to GCS.</string>
+    <string name="mavlink_service_notification_disconnected">Not connected to GCS.</string>
+    <string name="mavlink_service_updated_parameter_value">Updated parameter %1$s</string>
+
+    <string name="geofence_breach_warning_title">Geofence breached!</string>
+    <string name="geofence_breach_return_point">Drone will fly to pre-defined return point!</string>
+    <string name="geofence_breach_home">Drone will return to home position!</string>
+    <string name="geofence_breach_land">Drone will automatically land now!</string>
+    <string name="geofence_breach_warning">Move away from geofence!</string>
+    <string name="geofence_breach_terminate">Flight mission will terminate!</string>
+    <string name="geofence_breach_pause">Current mission will be paused!</string>
+
+    <string name="mission_control_widget_start">Start</string>
+    <string name="mission_control_widget_trigger_title">Warning</string>
+    <string name="mission_control_widget_trigger_message">Paused mission because remote controller sticks were moved!</string>
+</resources>

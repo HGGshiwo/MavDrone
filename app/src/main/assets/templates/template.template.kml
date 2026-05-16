@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns:wpml="http://www.dji.com/wpmz/1.0.2" xmlns="http://www.opengis.net/kml/2.2">
+    <Document>
+        <wpml:author>{{author}}</wpml:author>
+        <wpml:createTime>1675696543528</wpml:createTime>
+        <wpml:updateTime>{{updateTime}}</wpml:updateTime>
+
+        <wpml:missionConfig>
+            <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
+            <wpml:finishAction>{{finishAction}}</wpml:finishAction>
+            <wpml:exitOnRCLost>goContinue</wpml:exitOnRCLost>
+            <wpml:executeRCLostAction>hover</wpml:executeRCLostAction>
+            <wpml:takeOffSecurityHeight>20</wpml:takeOffSecurityHeight>
+            <wpml:takeOffRefPoint>{{takeOffRefPoint}}</wpml:takeOffRefPoint>
+            <wpml:takeOffRefPointAGLHeight>{{takeOffRefPointAGLHeight}}</wpml:takeOffRefPointAGLHeight>
+            <wpml:globalTransitionalSpeed>{{globalTransitionalSpeed}}</wpml:globalTransitionalSpeed>
+            <wpml:droneInfo>
+                <wpml:droneEnumValue>{{droneEnumValue}}</wpml:droneEnumValue>
+                <wpml:droneSubEnumValue>{{droneEnumSubValue}}</wpml:droneSubEnumValue>
+            </wpml:droneInfo>
+            {{#payloads}}
+            <wpml:payloadInfo>
+                <wpml:payloadEnumValue>{{payloadEnumValue}}</wpml:payloadEnumValue>
+                <wpml:payloadSubEnumValue>{{payloadEnumSubValue}}</wpml:payloadSubEnumValue>
+                <wpml:payloadPositionIndex>{{payloadPositionIndex}}</wpml:payloadPositionIndex>
+            </wpml:payloadInfo>
+            {{/payloads}}
+        </wpml:missionConfig>
+
+        <Folder>
+            <wpml:templateType>waypoint</wpml:templateType>
+            <wpml:useGlobalTransitionalSpeed>0</wpml:useGlobalTransitionalSpeed>
+            <wpml:templateId>0</wpml:templateId>
+            <wpml:waylineCoordinateSysParam>
+                <wpml:coordinateMode>WGS84</wpml:coordinateMode>
+                <wpml:heightMode>relativeToStartPoint</wpml:heightMode>
+                <wpml:globalShootHeight>50</wpml:globalShootHeight>
+                <wpml:positioningType>GPS</wpml:positioningType>
+                <wpml:surfaceFollowModeEnable>1</wpml:surfaceFollowModeEnable>
+                <wpml:surfaceRelativeHeight>100</wpml:surfaceRelativeHeight>
+            </wpml:waylineCoordinateSysParam>
+            <wpml:autoFlightSpeed>7</wpml:autoFlightSpeed>
+            <wpml:transitionalSpeed>{{globalTransitionalSpeed}}</wpml:transitionalSpeed>
+            <wpml:gimbalPitchMode>usePointSetting</wpml:gimbalPitchMode>
+            <wpml:globalUseStraightLine>0</wpml:globalUseStraightLine>
+        </Folder>
+    </Document>
+</kml>

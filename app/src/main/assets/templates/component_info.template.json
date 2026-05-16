@@ -1,0 +1,16 @@
+{
+  "version": {{version}},
+  "vendorName": "{{vendorName}}",
+  "modelName": "{{modelName}}",
+  "firmwareVersion": "{{firmwareVersion}}",
+  "hardwareVersion": "{{hardwareVersion}}",
+  "metadataTypes": [
+    {{#metadataTypes}}
+    {
+      "type": {{type}},
+      "uri": "{{{uri}}}",
+      "fileCrc": {{fileCrc}}
+    }{{^last}},{{/last}}
+    {{/metadataTypes}}
+  ]
+}

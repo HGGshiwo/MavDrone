@@ -1,0 +1,35 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "MavDrone Devcontainer",
+	"build": {
+		"dockerfile": "./Dockerfile",
+		"args": {
+			"BASE_IMAGE": "ubuntu:24.04",
+			"USERNAME": "wur"
+		},
+		"context": ".."
+	},
+	"runArgs": [
+		"--net=host",
+		"--pid=host",
+		"--ipc=host",
+		"-e",
+		"DISPLAY=${env:DISPLAY}"
+	],
+	"mounts": [
+		"source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+		"source=/dev/dri,target=/dev/dri,type=bind,consistency=cached",
+	],
+	"postCreateCommand": "bash .devcontainer/post-create.sh",
+	"remoteUser": "wur",
+	"updateRemoteUserUID": true,
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"charliermarsh.ruff"
+			]
+		}
+	}
+}

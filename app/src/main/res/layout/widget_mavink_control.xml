@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:id="@+id/textview_mavlink_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="5dp"
+        android:layout_marginTop="5dp"
+        android:drawableStart="@drawable/ic_mavlink_inactive"
+        android:drawablePadding="5dp"
+        android:padding="@dimen/mavlink_dialog_padding"
+        android:text="@string/mavlink_widget_title"
+        android:textColor="@color/uxsdk_white"
+        android:textSize="16sp"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <Switch
+        android:id="@+id/switch_mavlink"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:thumb="@drawable/uxsdk_selector_switch_thumb"
+        android:track="@drawable/uxsdk_switch_background"
+        android:layout_marginEnd="5dp"
+        app:layout_constraintHorizontal_weight="1"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:ignore="UseSwitchCompatOrMaterialXml" />
+
+    <ScrollView
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_margin="5dp"
+        android:padding="5dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_title">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TableLayout
+                android:id="@+id/table_layout_mavlink_connection_details"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/white_table_border"
+                android:visibility="gone"
+                android:stretchColumns="1"
+                app:layout_constraintTop_toTopOf="parent" >
+
+                <TableRow>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_connection_details_table_host_ip"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+
+                    <TextView
+                        android:id="@+id/textview_details_host_ip"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_null_string"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+                </TableRow>
+
+                <TableRow>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_connection_details_table_gcs_ips"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+
+                    <TextView
+                        android:id="@+id/textview_details_gcs_ips"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_null_string"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+                </TableRow>
+
+                <TableRow>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_connection_details_connected_components"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+
+                    <TextView
+                        android:id="@+id/textview_details_connected_components"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_null_string"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+                </TableRow>
+
+                <TableRow>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_connection_details_table_waypoint_mission"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+
+                    <TextView
+                        android:id="@+id/textview_details_waypoint_mission"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_null_string"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+                </TableRow>
+
+                <TableRow>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_connection_details_table_geofence_mission"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+
+                    <TextView
+                        android:id="@+id/textview_details_geofence_mission"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_null_string"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+                </TableRow>
+
+                <TableRow>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_connection_details_table_status"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+
+                    <TextView
+                        android:id="@+id/textview_details_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mavlink_widget_null_string"
+                        android:background="@drawable/white_table_cell_border"
+                        android:textColor="@color/uxsdk_white_85_percent"
+                        android:textSize="@dimen/mavlink_row_text_size"
+                        android:padding="8dp" />
+                </TableRow>
+            </TableLayout>
+
+            <View
+                android:id="@+id/mavlink_connection_details_footer"
+                android:visibility="gone"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/mavlink_row_margin_double"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_gray_45"
+                app:layout_constraintBottom_toTopOf="@+id/textview_connection_section_header"
+                app:layout_constraintTop_toBottomOf="@+id/table_layout_mavlink_connection_details" />
+
+
+            <TextView
+                android:id="@+id/textview_connection_section_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/mavlink_widget_connection_title"
+                android:textColor="@color/uxsdk_white"
+                android:textSize="@dimen/mavlink_header_text_size"
+                android:textStyle="bold"
+                app:layout_constraintBottom_toTopOf="@+id/textview_mavlink_port_label"
+                app:layout_constraintTop_toBottomOf="@+id/mavlink_connection_details_footer"
+                app:layout_constraintVertical_chainStyle="packed" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_port_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_port"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_mavlink_system_id_label"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintRight_toLeftOf="@+id/textview_mavlink_port_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_connection_section_header" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_port_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_mavlink_system_id_value"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_port_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_connection_section_header" />
+
+            <EditText
+                android:id="@+id/edit_text_mavlink_port"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_port_hint"
+                android:inputType="number"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/edit_text_mavlink_system_id"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_port_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_connection_section_header" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_system_id_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_system_id"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintBottom_toTopOf="@+id/textview_mavlink_max_missed_heartbeats_label"
+                app:layout_constraintRight_toLeftOf="@+id/textview_mavlink_system_id_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_port_label" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_system_id_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_mavlink_max_missed_heartbeats_value"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_system_id_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_port_value" />
+
+            <EditText
+                android:id="@+id/edit_text_mavlink_system_id"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_system_id_hint"
+                android:inputType="number"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/edit_text_mavlink_max_missed_heartbeats"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_system_id_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_mavlink_port" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_max_missed_heartbeats_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_max_missed_heartbeats"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@id/textview_mavlink_expected_heartbeat_interval_label"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintRight_toLeftOf="@+id/textview_mavlink_max_missed_heartbeats_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_system_id_label" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_max_missed_heartbeats_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_mavlink_expected_heartbeat_interval_value"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_max_missed_heartbeats_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_system_id_label" />
+
+            <EditText
+                android:id="@+id/edit_text_mavlink_max_missed_heartbeats"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_max_missing_heartbeats_hint"
+                android:inputType="number"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/edit_text_mavlink_expected_heartbeat_interval"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_max_missed_heartbeats_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_mavlink_system_id" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_expected_heartbeat_interval_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_exp_heartbeat_interval"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintRight_toLeftOf="@+id/textview_mavlink_expected_heartbeat_interval_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_max_missed_heartbeats_label"
+                app:layout_constraintBottom_toTopOf="@+id/connection_section_footer" />
+
+            <TextView
+                android:id="@+id/textview_mavlink_expected_heartbeat_interval_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_expected_heartbeat_interval_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_mavlink_max_missed_heartbeats_label"
+                app:layout_constraintBottom_toTopOf="@+id/connection_section_footer" />
+
+            <EditText
+                android:id="@+id/edit_text_mavlink_expected_heartbeat_interval"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_exp_heartbeat_interval_hint"
+                android:inputType="number"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/mavlink_row_text_size"
+                app:layout_constraintLeft_toRightOf="@+id/textview_mavlink_expected_heartbeat_interval_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_mavlink_max_missed_heartbeats"
+                app:layout_constraintBottom_toTopOf="@+id/connection_section_footer"/>
+
+            <View
+                android:id="@+id/connection_section_footer"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_gray_45"
+                app:layout_constraintBottom_toTopOf="@+id/textview_stream_section_header"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_mavlink_expected_heartbeat_interval" />
+
+            <TextView
+                android:id="@+id/textview_stream_section_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:text="@string/mavlink_widget_stream_title"
+                android:textColor="@color/uxsdk_white"
+                android:textSize="@dimen/mavlink_header_text_size"
+                android:textStyle="bold"
+                app:layout_constraintBottom_toTopOf="@+id/textview_stream_port_label"
+                app:layout_constraintTop_toBottomOf="@+id/connection_section_footer" />
+
+            <TextView
+                android:id="@+id/textview_stream_port_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_stream_port"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_stream_username_label"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintRight_toLeftOf="@+id/textview_stream_port_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_section_header" />
+
+            <TextView
+                android:id="@+id/textview_stream_port_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_stream_username_value"
+                app:layout_constraintLeft_toRightOf="@+id/textview_stream_port_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_section_header" />
+
+            <EditText
+                android:id="@+id/edit_text_stream_port"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_stream_port_hint"
+                android:inputType="number"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintLeft_toRightOf="@+id/textview_stream_port_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_section_header"
+                app:layout_constraintBottom_toTopOf="@+id/edit_text_stream_username" />
+
+            <TextView
+                android:id="@+id/textview_stream_username_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_username"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_stream_password_label"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintRight_toLeftOf="@+id/textview_stream_username_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_port_label" />
+
+            <TextView
+                android:id="@+id/textview_stream_username_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/textview_stream_password_value"
+                app:layout_constraintLeft_toRightOf="@+id/textview_stream_username_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_port_value" />
+
+            <EditText
+                android:id="@+id/edit_text_stream_username"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_username_hint"
+                android:inputType="text"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintBottom_toTopOf="@+id/edit_text_stream_password"
+                app:layout_constraintLeft_toRightOf="@+id/textview_stream_username_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_stream_port" />
+
+            <TextView
+                android:id="@+id/textview_stream_password_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_password"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintRight_toLeftOf="@+id/textview_stream_password_value"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_username_label" />
+
+            <TextView
+                android:id="@+id/textview_stream_password_value"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@drawable/uxsdk_simulator_row_background"
+                android:gravity="center"
+                android:textColor="@color/uxsdk_blue"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintLeft_toRightOf="@+id/textview_stream_password_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_username_value" />
+
+            <EditText
+                android:id="@+id/edit_text_stream_password"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:background="@color/uxsdk_white"
+                android:hint="@string/mavlink_widget_password_hint"
+                android:inputType="text"
+                android:paddingStart="2dp"
+                android:textColor="@color/uxsdk_black"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintLeft_toRightOf="@+id/textview_stream_password_label"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_stream_username" />
+
+            <TextView
+                android:id="@+id/textview_stream_autosave_label"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:gravity="center_vertical"
+                android:text="@string/mavlink_widget_stream_autostart"
+                android:textColor="@color/uxsdk_white_85_percent"
+                android:textSize="@dimen/uxsdk_simulator_row_text_size"
+                app:layout_constraintLeft_toLeftOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/textview_stream_password_label" />
+
+            <Switch
+                android:id="@+id/switch_stream_autostart"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/mavlink_row_height"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginBottom="@dimen/mavlink_row_margin"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:thumb="@drawable/uxsdk_selector_switch_thumb"
+                android:track="@drawable/uxsdk_switch_background"
+                app:layout_constraintTop_toBottomOf="@+id/edit_text_stream_password"
+                app:layout_constraintRight_toRightOf="parent"
+                tools:ignore="UseSwitchCompatOrMaterialXml" />
+
+            <TextView
+                android:id="@+id/textview_save"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mavlink_row_margin"
+                android:layout_marginStart="2dp"
+                android:background="@drawable/uxsdk_selector_simulator_button_background"
+                android:gravity="center"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:paddingHorizontal="10dp"
+                android:text="@string/mavlink_widget_save"
+                android:textColor="@color/uxsdk_white"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                app:layout_constraintRight_toRightOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/switch_stream_autostart" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </ScrollView>
+</merge>

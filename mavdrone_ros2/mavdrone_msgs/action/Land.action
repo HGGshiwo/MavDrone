@@ -1,0 +1,6 @@
+std_msgs/Empty req
+---
+bool success
+string message
+---
+float32 altitude

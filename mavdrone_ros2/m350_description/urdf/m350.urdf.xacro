@@ -1,0 +1,122 @@
+<?xml version="1.0"?>
+<robot name="drone" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:property name="namespace" value="mavdrone" />
+
+  <!-- Define robot constants -->
+  <xacro:property name="arm_length" value="0.45" />
+  <xacro:property name="arm_radius" value="0.015" />
+  <xacro:property name="prop_radius" value="0.035" />
+
+  <xacro:property name="base_length" value="0.27" />
+  <xacro:property name="base_width" value="0.135" />
+  <xacro:property name="base_height" value="0.17" />
+
+  <xacro:property name="skyport_mount_radius" value="0.02" />
+  <xacro:property name="skyport_mount_length" value="0.036" />
+
+  <!-- Robot Base -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 ${pi/2}" />
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}" />
+      </geometry>
+      <material name="base">
+        <color rgba="0.2 0.2 0.2 1" />
+      </material>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 ${pi/2}" />
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}" />
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Arms -->
+  <xacro:macro name="arm" params="prefix color arm_angle offset">
+    <joint name="${prefix}_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="${prefix}_link" />
+      <origin xyz="0.0 ${offset} ${arm_radius-(base_height/2)}" rpy="0 0 ${arm_angle+pi/4}" />
+    </joint>
+
+    <link name="${prefix}_link">
+      <visual>
+        <origin xyz="${arm_length/2} 0 0" rpy="${pi/2} 0 ${pi/2}" />
+        <geometry>
+          <cylinder radius="${arm_radius}" length="${arm_length}" />
+        </geometry>
+
+        <material name="black">
+          <color rgba="0.2 0.2 0.2 1" />
+        </material>
+      </visual>
+
+      <collision>
+        <origin xyz="${arm_length/2} 0 0" rpy="${pi/2} 0 ${pi/2}" />
+        <geometry>
+          <cylinder radius="${arm_radius}" length="${arm_length}" />
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_motor_joint" type="fixed">
+      <parent link="${prefix}_link" />
+      <child link="${prefix}_motor_link" />
+      <origin xyz="${arm_length} 0.0 0.0" rpy="0 0 0" />
+    </joint>
+
+    <link name="${prefix}_motor_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <cylinder radius="${prop_radius}" length="0.16" />
+        </geometry>
+        <material name="${prefix}_color">
+          <color rgba="${color}" />
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <cylinder radius="${prop_radius}" length="0.16" />
+        </geometry>
+      </collision>
+    </link>
+  </xacro:macro>
+
+  <xacro:arm prefix="arm1" color="1.0 0.0 0.0 1.0" arm_angle="0" offset="0.07" />
+  <xacro:arm prefix="arm3" color="1.0 0.0 0.0 1.0" arm_angle="${pi/2}" offset="0.07" />
+  <xacro:arm prefix="arm4" color="0.0 1.0 0.0 1.0" arm_angle="${pi}" offset="-0.07" />
+  <xacro:arm prefix="arm2" color="0.0 1.0 0.0 1.0" arm_angle="${3*pi/2}" offset="-0.07" />
+
+  <link name="skyport_mount_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="${skyport_mount_radius}" length="${skyport_mount_length}" />
+      </geometry>
+      <material name="skyport_mount_color">
+        <color rgba="0 1 0 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="${skyport_mount_radius}" length="${skyport_mount_length}" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="skyport_mount_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="skyport_mount_link" />
+    <origin xyz="0.0 0.13 ${-(base_height/2)-(skyport_mount_length/2)-0.008}" rpy="0 0 0" />
+  </joint>
+
+  <xacro:include filename="$(find m350_description)/urdf/p1.urdf.xacro" />
+  <xacro:p1 parent="skyport_mount_link" xyz="0 0 -${skyport_mount_length/2}" rpy="0 0 0" />
+</robot>

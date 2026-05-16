@@ -1,0 +1,6 @@
+# Ignore folders
+*.egg-info
+
+# Ignore file extensions
+*.pyc
+*.ulg

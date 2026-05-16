@@ -1,0 +1,19 @@
+local_grid_broadcaster:
+  ros__parameters:
+    frame_id: "utm"
+    child_frame_id: "world"
+
+    navsatfix_topic: "/mavdrone/gps/fix"  # Leave empty to use default transform
+
+    # Unifarm
+    default_transform_x: 682700.58
+    default_transform_y: 5763186.24
+
+    # Bennekom
+    # default_transform_x: 683148.1623288121
+    # default_transform_y: 5763390.793870126
+    default_transform_z: 0.0
+    default_transform_qx: 0.0
+    default_transform_qy: 0.0
+    default_transform_qz: 0.0
+    default_transform_qw: 1.0

@@ -1,0 +1,130 @@
+[versions]
+djiAircraft = "5.17.0"
+djiAircraftProvided = "5.17.0"
+djiNetwork = "5.17.0"
+djiWpmz = "1.0.4.0"
+
+rxjava3 = "3.0.0"
+rxjava3Android = "3.0.0"
+rxjava3Kotlin = "3.0.0"
+
+androidxAnnotation = "1.1.0"
+androidxAppcompat = "1.3.1"
+androidxMultidex = "2.0.1"
+androidxLegacySupport = "1.0.0"
+androidxRecyclerview = "1.1.0"
+androidxConstraintLayout = "2.1.4"
+androidxLifecycle = "2.3.1"
+androidxLifecycleRuntime = "2.3.1"
+androidxLifecycleViewModel = "2.3.1"
+androidxLifecycleLiveData = "2.3.1"
+androidxLifecycleProcess = "2.3.1"
+androidxMedia = "1.0.0"
+androidxKtx = "1.3.2"
+androidxKtxFragment = "1.3.3"
+androidxKtxNavigationFragment = "2.5.3"
+androidxKtxNavigationUi = "2.5.3"
+androidxCardview = "1.0.0"
+androidxTestCore = "1.5.0"
+androidxTestRunner = "1.5.0"
+androidxTestExt = "1.1.5"
+androidxEspresso = "3.5.1"
+
+googleMaterial = "1.0.0"
+googlePlayPlaces = "16.0.0"
+googlePlayMaps = "16.0.0"
+googlePlayLocation = "16.0.0"
+googlePlayBase = "16.0.0"
+
+junit = "4.12"
+
+squareupOkio = "1.17.2"
+squareupWire = "2.2.0"
+squareupOkhttp3 = "3.14.9"
+squareupLeakcanary = "2.14"
+airbnbLottie = "3.3.1"
+maplibreTurf = "5.9.1"
+maplibreSdk = "10.3.1"
+locationtechJts = "1.20.0"
+spullaraMustache = "0.9.14"
+jakewhartonTimber = "5.0.1"
+
+mikepenzCommunityMaterial = "3.5.95.1-kotlin"
+mikepenzGoogleMaterial = "3.0.1.4.original-kotlin"
+mikepenzIconicsViews = "4.0.2"
+mikepenzIconicsCore = "4.0.2"
+mikepenzIonicons = "2.0.1.5-kotlin"
+
+# Plugin versions are from:
+# https://developer.dji.com/doc/mobile-sdk-tutorial/en/quick-start/user-project-caution.html
+androidGradlePlugin = "8.12.3"
+jetbrainsKotlinAndroidPlugin = "2.1.0"
+jetbrainsKotlinKaptPlugin = "2.1.0"
+jetbrainsKotlinParcelizePlugin = "2.1.0"
+jetbrainsKotlin = "2.1.0"
+
+[libraries]
+dji-aircraft = { group = "com.dji", name = "dji-sdk-v5-aircraft", version.ref = "djiAircraft" }
+dji-aircraft-provided = { group = "com.dji", name = "dji-sdk-v5-aircraft-provided", version.ref = "djiAircraftProvided" }
+dji-network = { group = "com.dji", name = "dji-sdk-v5-networkImp", version.ref = "djiNetwork" }
+dji-wpmz = { group = "com.dji", name = "wpmzsdk", version.ref = "djiWpmz" }
+
+reactivex-rxjava3 = { group = "io.reactivex.rxjava3", name = "rxjava", version.ref = "rxjava3" }
+reactivex-rxjava3-android = { group = "io.reactivex.rxjava3", name = "rxandroid", version.ref = "rxjava3Android" }
+reactivex-rxjava3-kotlin = { group = "io.reactivex.rxjava3", name = "rxkotlin", version.ref = "rxjava3Kotlin" }
+
+androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "androidxAnnotation" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidxAppcompat" }
+androidx-multidex = { group = "androidx.multidex", name = "multidex", version.ref = "androidxMultidex" }
+androidx-legacy-support = { group = "androidx.legacy", name = "legacy-support-v4", version.ref = "androidxLegacySupport" }
+androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "androidxRecyclerview" }
+androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "androidxConstraintLayout" }
+androidx-lifecycle = { group = "androidx.lifecycle", name = "lifecycle-common-java8", version.ref = "androidxLifecycle" }
+androidx-lifecycle-runtime = { group = "androidx.lifecycle", name = "lifecycle-runtime", version.ref = "androidxLifecycleRuntime" }
+androidx-lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle-viewmodel", version.ref = "androidxLifecycleViewModel" }
+androidx-lifecycle-livedata = { group = "androidx.lifecycle", name = "lifecycle-livedata", version.ref = "androidxLifecycleLiveData" }
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "androidxLifecycleProcess" }
+androidx-media = { group = "androidx.media", name = "media", version.ref = "androidxMedia" }
+androidx-ktx-core = { group = "androidx.core", name = "core-ktx", version.ref = "androidxKtx" }
+androidx-ktx-fragment = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "androidxKtxFragment" }
+androidx-ktx-navigation-fragment = { group = "androidx.navigation", name = "navigation-fragment-ktx", version.ref = "androidxKtxNavigationFragment" }
+androidx-ktx-navigation-ui = { group = "androidx.navigation", name = "navigation-ui-ktx", version.ref = "androidxKtxNavigationUi" }
+androidx-cardview = { group = "androidx.cardview", name = "cardview", version.ref = "androidxCardview" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-ext = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExt" }
+androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidxEspresso" }
+
+google-material = { group = "com.google.android.material", name = "material", version.ref = "googleMaterial" }
+google-play-places = { group = "com.google.android.gms", name = "play-services-places", version.ref = "googlePlayPlaces" }
+google-play-maps = { group = "com.google.android.gms", name = "play-services-maps", version.ref = "googlePlayMaps" }
+google-play-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "googlePlayLocation" }
+google-play-base = { group = "com.google.android.gms", name = "play-services-base", version.ref = "googlePlayBase" }
+
+junit-junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+squareup-okio = { group = "com.squareup.okio", name = "okio", version.ref = "squareupOkio" }
+squareup-wire = { group = "com.squareup.wire", name = "wire-runtime", version.ref = "squareupWire" }
+squareup-okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "squareupOkhttp3" }
+squareup-leakcanary = { group = "com.squareup.leakcanary", name = "leakcanary-android", version.ref = "squareupLeakcanary" }
+airbnb-lottie = { group = "com.airbnb.android", name = "lottie", version.ref = "airbnbLottie" }
+maplibre-turf = { group = "org.maplibre.gl", name = "android-sdk-turf", version.ref = "maplibreTurf" }
+maplibre-sdk = { group = "org.maplibre.gl", name = "android-sdk", version.ref = "maplibreSdk" }
+locationtech-jts-core = { group = "org.locationtech.jts", name = "jts-core", version.ref = "locationtechJts" }
+spullara-mustache = { group = "com.github.spullara.mustache.java", name = "compiler", version.ref = "spullaraMustache" }
+jakewharton-timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "jakewhartonTimber" }
+
+mikepenz-community-material = { group = "com.mikepenz", name = "community-material-typeface", version.ref = "mikepenzCommunityMaterial" }
+mikepenz-google-material = { group = "com.mikepenz", name = "google-material-typeface", version.ref = "mikepenzGoogleMaterial" }
+mikepenz-iconics-core = { group = "com.mikepenz", name = "iconics-core", version.ref = "mikepenzIconicsCore" }
+mikepenz-iconics-views = { group = "com.mikepenz", name = "iconics-views", version.ref = "mikepenzIconicsViews" }
+mikepenz-ionicons = { group = "com.mikepenz", name = "ionicons-typeface", version.ref = "mikepenzIonicons" }
+
+jetbrains-kotlin = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib-jdk7", version.ref = "jetbrainsKotlin" }
+
+[plugins]
+android-gradle-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
+android-gradle-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
+jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "jetbrainsKotlinAndroidPlugin" }
+jetbrains-kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "jetbrainsKotlinKaptPlugin" }
+jetbrains-kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "jetbrainsKotlinParcelizePlugin" }

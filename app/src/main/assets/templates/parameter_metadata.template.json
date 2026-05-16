@@ -1,0 +1,34 @@
+{
+  "$id": "https://mavlink.io/comp_version.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "description": "Parameter MetaData",
+  "version": 1,
+  "parameters": [
+    {{#parameters}}
+    {
+      "category": "{{category}}",
+      "group": "{{group}}",
+      "longDesc": "{{{longDesc}}}",
+      "name": "{{name}}",
+      "shortDesc": "{{shortDesc}}",
+      "type": "{{type}}",
+      {{#units}}
+      "units": "{{units}}",
+      {{/units}}
+      "default": {{default}},
+      "max": {{max}},
+      "min": {{min}}{{#isEnum}},{{/isEnum}}
+      {{#isEnum}}
+      "values": [
+          {{#values}}
+          {
+            "description": "{{description}}",
+            "value": {{value}}
+          }{{^lastValue}},{{/lastValue}}
+          {{/values}}
+      ]
+      {{/isEnum}}
+    }{{^last}},{{/last}}
+  {{/parameters}}
+  ]
+}

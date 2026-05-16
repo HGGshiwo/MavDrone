@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<mavlinkcamera>
+    <definition version="1">
+        <model>{{model}}</model>
+        <vendor>{{vendor}}</vendor>
+    </definition>
+    <parameters>
+        {{#parameters}}
+        <parameter name="{{name}}" type="int32" default="{{defaultValue}}">
+            <description>{{description}}</description>
+            <options>
+                {{#options}}
+                <option name="{{name}}" value="{{value}}">
+                    {{#hasExclusions}}
+                    <exclusions>
+                        {{#exclusions}}
+                        <exclude>{{.}}</exclude>
+                        {{/exclusions}}
+                    </exclusions>
+                    {{/hasExclusions}}
+                </option>
+                {{/options}}
+            </options>
+        </parameter>
+        {{/parameters}}
+    </parameters>
+</mavlinkcamera>

@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+description = "Package to communicate with DJI drone using MavDrone app"
+name = "mavdrone"
+authors = [{ name = "Rick van Essen", email = "rick.vanessen@wur.nl" }]
+readme = "README.md"
+requires-python = ">=3.12"
+keywords = ["drone", "mavlink"]
+license = { text = "MIT" }
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: 3.12",
+  "Typing :: Typed",
+]
+
+dynamic = ["dependencies", "version"]
+
+# [tool.setuptools]
+# py-modules = []
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+version = { attr = "mavdrone.__version__" }
+
+[tool.ruff]
+line-length = 140
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+extra-standard-library = ["toml", "yaml", "tap", "setuptools"]
+section-order = ["future", "standard-library", "torch_numpy", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.isort.sections]
+torch_numpy = ["cv2", "numpy", "fields2cover", "torch", "torchvision", "matplotlib"]
+
+[tool.mypy]
+exclude = ["build", "^tmp_*"]
+plugins = "numpy.typing.mypy_plugin"
+python_version = "3.12"
+warn_redundant_casts = true
+warn_return_any = false
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = """'\
+  matplotlib.*,\
+  ultralytics.*,\
+  tkintermapview.*,\
+  torchvision.*,\
+  Metashape.*,\
+  fields2cover.*,\
+  pykml.*,\
+  fast_tsp.*,\
+  tilemapbase.*,\
+  moviepy.*,\
+  rasterio.*,\
+  exiftool.*,\
+  scipy.*,\
+  sklearn.*,\
+  affine.*,\
+  codecarbon.*,\
+  simplekml.*,\
+  mavdrone.*\
+"""
+ignore_missing_imports = true
