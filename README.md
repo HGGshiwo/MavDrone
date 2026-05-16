@@ -135,3 +135,8 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 Third-party components:
 * The folder `uxsdk/` contains code licensed under the MIT License. See [`uxsdk/LICENSE`](uxsdk/LICENCE) for details.
 * The folder `mavlink/` contains code licensed under the MIT License. See [`mavlink/LICENSE`](mavlink/LICENCE) for details.
+
+## Funding
+This research is part of the research program SYNERGIA, funding was obtained from the Dutch Research Council (NWO grant 17626), IMEC-One Planet and other private parties.
+
+<img src="doc/wageningen_logo.png" alt="wageningen university logo" height="50"> &nbsp;&nbsp;&nbsp; <img src="doc/synergia_logo_basis.png" alt="synergia logo" height="50">
