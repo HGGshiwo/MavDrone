@@ -125,7 +125,12 @@ class Camera(
         ftpManager.create()
 
         focalLength = KeyManager.getInstance().getValue(KeyTools.createKey(CameraKey.KeyCameraZoomFocalLength, componentIndex), 0)
-        horizontalFOV = (2 * atan(cameraDefinitionGenerator.cameraDetails!!.sensorWidth / (2 * focalLength))).toDouble().toRadians().roundToInt()
+        val sensorWidth = cameraDefinitionGenerator.cameraDetails?.sensorWidth ?: 0f
+        horizontalFOV = if (focalLength > 0 && sensorWidth > 0f) {
+            (2 * atan(sensorWidth / (2 * focalLength))).toDouble().toRadians().roundToInt()
+        } else {
+            0
+        }
 
         compositeDisposable.add(
             djiGetValue(KeyTools.createCameraKey(CameraKey.KeyCameraType, componentIndex, cameraLensType))

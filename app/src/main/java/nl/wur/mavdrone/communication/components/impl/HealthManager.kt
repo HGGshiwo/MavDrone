@@ -107,6 +107,10 @@ class HealthManager(
         lastUpdateTime = System.currentTimeMillis()
     }
 
+    fun getUnhealthySensors(): List<MavSysStatusSensor> {
+        return ALL_SENSORS.filterIsInstance<MavSysStatusSensor>().filter { !healthySensors.flagsEnabled(it) }
+    }
+
     private fun updateEnabledSensors(t: Long) {
         // Check whether obstacle avoidance is enabled
         compositeDisposable.add(
@@ -116,6 +120,7 @@ class HealthManager(
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                     { value: ObstacleAvoidanceType ->
+                        obstacleAvoidanceQueryFailed = false
                         var enabled = false
                         when (value) {
                             ObstacleAvoidanceType.BRAKE -> enabled = true
@@ -131,7 +136,13 @@ class HealthManager(
                             enabledSensors = listToEnum(enabledSensorsList)
                         }
                     },
-                    { RXUtils.handleError(it) })
+                    { error ->
+                        // This query repeats every 5 s; only report the first failure until it succeeds again
+                        if (!obstacleAvoidanceQueryFailed) {
+                            obstacleAvoidanceQueryFailed = true
+                            RXUtils.handleError(error)
+                        }
+                    })
         )
 
         // Check if geofence is enabled (e.g. has a fence loaded)
@@ -150,6 +161,7 @@ class HealthManager(
 
     companion object {
         private const val MIN_UPDATE_TIME = 2000
+        private var obstacleAvoidanceQueryFailed = false
         private val ALL_SENSORS: List<MavSysStatusSensor?> = listOf(
             MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_3D_GYRO,
             MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_GPS,

@@ -33,7 +33,7 @@ public class MaplibreProvider extends MapProvider {
         final int mapType = mapkitOptions.getMapType();
         Mapkit.mapType(mapType);
         Mapkit.mapProvider(providerType);
-        Mapbox.getInstance(context.getApplicationContext(), Mapkit.getMapboxAccessToken(), WellKnownTileServer.Mapbox);
+        Mapbox.getInstance(context.getApplicationContext(), Mapkit.getMapboxAccessToken(), WellKnownTileServer.MapLibre);
         MapboxMapOptions options = MapboxMapOptions.createFromAttributes(context);
         options.textureMode(true);
         options.attributionGravity(Gravity.BOTTOM | Gravity.RIGHT);

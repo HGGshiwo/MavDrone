@@ -65,6 +65,11 @@ class Radar(connectionWR: WeakReference<MavConnection>,
             } else {
                 distancesList.addAll(distancesArray.map { it / 10 })
             }
+
+            if (distancesList.isEmpty()) {
+                return null
+            }
+
             return ObstacleDistance.builder()
                 .timeUsec(BigInteger.valueOf((System.currentTimeMillis() * 1000L)))
                 .sensorType(MavDistanceSensor.MAV_DISTANCE_SENSOR_RADAR)

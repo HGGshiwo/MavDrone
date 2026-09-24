@@ -44,7 +44,7 @@ class MavService : Service() {
             Timber.plant(fileLogger)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= 33 /* Build.VERSION_CODES.TIRAMISU */) {
             connectionInformation = intent.getParcelableExtra("connection_information", ConnectionInformation::class.java)
             streamInformation = intent.getParcelableExtra("stream_information", StreamInformation::class.java)
         } else {

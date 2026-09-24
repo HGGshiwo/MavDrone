@@ -17,6 +17,8 @@ import dji.sdk.keyvalue.value.product.ProductType
 import dji.sdk.wpmz.value.mission.WaylineLocationCoordinate2D
 import dji.v5.manager.KeyManager
 import dji.v5.manager.aircraft.simulator.SimulatorManager
+import dji.v5.manager.aircraft.simulator.SimulatorState
+import dji.v5.manager.aircraft.simulator.SimulatorStatusListener
 import dji.v5.manager.aircraft.waypoint3.model.WaypointMissionExecuteState
 
 import io.reactivex.rxjava3.core.Completable
@@ -41,7 +43,10 @@ import io.dronefleet.mavlink.common.MavFrame
 import io.dronefleet.mavlink.common.MavGoto
 import io.dronefleet.mavlink.common.MavLandedState
 import io.dronefleet.mavlink.common.MavProtocolCapability
+import io.dronefleet.mavlink.common.MavSeverity
+import io.dronefleet.mavlink.common.MavSysStatusSensor
 import io.dronefleet.mavlink.common.MavVtolState
+import io.dronefleet.mavlink.common.Statustext
 import io.dronefleet.mavlink.common.SysStatus
 import io.dronefleet.mavlink.standard.MavAutopilot
 import io.dronefleet.mavlink.standard.MavComponent
@@ -135,6 +140,11 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     private var armingTime = 0L
     private var takeOffTime = 0L
 
+    var prearmChecksEnabled = true
+
+    private var simulatorHomeSet = false
+    private val simulatorStatusListener = SimulatorStatusListener { state -> onSimulatorStateUpdate(state) }
+
     var productType: ProductType = ProductType.UNKNOWN
         private set
     private var customSubMode = SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_READY
@@ -176,6 +186,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                         addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_HIL_ENABLED)
                     } else {
                         removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_HIL_ENABLED)
+                        simulatorHomeSet = false
                     }
                 }, { error -> RXUtils.handleError(error) })
         )
@@ -187,6 +198,8 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         isFlying = false
 
         compositeDisposable.add(djiGetValue(ProductKey.KeyProductType).subscribe { p: ProductType -> productType = p })
+
+        SimulatorManager.getInstance().addSimulatorStateListener(simulatorStatusListener)
 
         addDJIListener(KeyTools.createKey(FlightControllerKey.KeyFlightMode)) { value ->
             flightMode = value
@@ -341,6 +354,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     }
 
     override fun destroy() {
+        SimulatorManager.getInstance().removeSimulatorStateListener(simulatorStatusListener)
         missionManager.destroy()
         flightLogManager.destroy()
         droneParameters.destroy()
@@ -670,6 +684,28 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                     return true
                 }
 
+                MavCmd.MAV_CMD_RUN_PREARM_CHECKS -> {
+                    val failedChecks = runPrearmChecks()
+
+                    failedChecks.forEach { check ->
+                        sendMessage(
+                            Statustext.builder()
+                                .severity(MavSeverity.MAV_SEVERITY_ERROR)
+                                .text("PreArm: $check")
+                                .build()
+                        )
+                    }
+
+                    if (failedChecks.isEmpty()) {
+                        log.i("Prearm checks passed")
+                        sendMessage(commandAccepted(MavCmd.MAV_CMD_RUN_PREARM_CHECKS, msg.originSystemId, msg.originComponentId))
+                    } else {
+                        log.w("Prearm checks failed: $failedChecks")
+                        sendMessage(commandDenied(MavCmd.MAV_CMD_RUN_PREARM_CHECKS, msg.originSystemId, msg.originComponentId))
+                    }
+                    return true
+                }
+
                 else -> {
                     log.i("Unsupported command: " + payload.command().entry())
                     sendMessage(commandUnsupported(payload.command().entry(), msg.originSystemId, msg.originComponentId))
@@ -733,6 +769,72 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
                 else -> {}
             }
+        }
+    }
+
+    private fun runPrearmChecks(): List<String> {
+        if (!prearmChecksEnabled) {
+            return emptyList()
+        }
+
+        val failedChecks = mutableListOf<String>()
+
+        // GPS
+        when (gpsSignalLevel) {
+            null, GPSSignalLevel.LEVEL_0, GPSSignalLevel.LEVEL_1 -> failedChecks.add("GPS has no fix")
+            GPSSignalLevel.LEVEL_2 -> failedChecks.add("GPS only has a 2D fix")
+            else -> {}
+        }
+
+        // RTK
+        if (rtk.isRtkEnabled && !rtk.isRtkHealthy) {
+            failedChecks.add("RTK is not healthy")
+        }
+
+        // Home location
+        if (rtlHomeLocation == null) {
+            failedChecks.add("Home location not set")
+        }
+
+        // Sensor health as determined by the DJI health manager
+        healthManager.getUnhealthySensors().forEach {
+            failedChecks.add("${prearmSensorName(it)} is not healthy")
+        }
+
+        // Battery level
+        connectionWR.get()?.mavlinkComponents?.batteries?.forEach { battery ->
+            if (battery.remainingPercent in 0 until battery.lowWarningThreshold) {
+                failedChecks.add("Battery ${battery.componentIndex + 1} is low (${battery.remainingPercent}%)")
+            }
+        }
+
+        return failedChecks
+    }
+
+    private fun prearmSensorName(sensor: MavSysStatusSensor): String = when (sensor) {
+        MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_3D_GYRO, MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_YAW_POSITION -> "Compass"
+        MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_GPS -> "GPS"
+        MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_RC_RECEIVER -> "Remote controller"
+        MavSysStatusSensor.MAV_SYS_STATUS_GEOFENCE -> "Geofence"
+        MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_BATTERY -> "Battery"
+        MavSysStatusSensor.MAV_SYS_STATUS_OBSTACLE_AVOIDANCE -> "Obstacle avoidance"
+        else -> sensor.name
+    }
+
+    private fun onSimulatorStateUpdate(state: SimulatorState) {
+        if (!SimulatorManager.getInstance().isSimulatorEnabled) {
+            simulatorHomeSet = false
+            return
+        }
+
+        val location = state.location ?: return
+        aircraftLocation = LocationCoordinate3D(location.latitude, location.longitude, state.positionZ.toDouble())
+        attitude = Attitude(state.pitch.toDouble(), state.roll.toDouble(), state.yaw.toDouble())
+
+        if (!simulatorHomeSet) {
+            rtlHomeLocation = LocationCoordinate2D(location.latitude, location.longitude)
+            simulatorHomeSet = true
+            log.i("Simulator home set to $rtlHomeLocation")
         }
     }
 
@@ -849,6 +951,24 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             return
         }
 
+        if (prearmChecksEnabled) {
+            val failedChecks = runPrearmChecks()
+            if (failedChecks.isNotEmpty()) {
+                failedChecks.forEach { check ->
+                    sendMessage(
+                        Statustext.builder()
+                            .severity(MavSeverity.MAV_SEVERITY_ERROR)
+                            .text("PreArm: $check")
+                            .build()
+                    )
+                }
+                log.w("Cannot arm drone, prearm checks failed: $failedChecks")
+                sendMessage(commandDenied(MavCmd.MAV_CMD_COMPONENT_ARM_DISARM, systemId, componentId))
+                return
+            }
+            log.i("Prearm checks passed")
+        }
+
         if (!containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)) {
             log.i("Motors are armed!")
             addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)
@@ -902,25 +1022,31 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             .build()
     }
 
-    private fun toMavlinkGlobalPositionIntMessage(): GlobalPositionInt {
+    private fun toMavlinkGlobalPositionIntMessage(): GlobalPositionInt? {
+        val location = aircraftLocation ?: return null
+        val velocity = aircraftVelocity ?: return null
+        val currentAttitude = attitude ?: return null
+
         return GlobalPositionInt.builder()
             .timeBootMs(millisSinceBoot)
-            .lat((aircraftLocation!!.latitude * 1e7).toInt())
-            .lon((aircraftLocation!!.longitude * 1e7).toInt())
-            .relativeAlt((aircraftLocation!!.altitude * 1e3).toInt())
-            .vx((aircraftVelocity!!.x * 1e2).toInt())
-            .vy((aircraftVelocity!!.y * 1e2).toInt())
-            .vz((aircraftVelocity!!.z * 1e2).toInt())
-            .hdg((((attitude!!.yaw * 1e2 + 360) % 360) * 1e2).toInt())
+            .lat((location.latitude * 1e7).toInt())
+            .lon((location.longitude * 1e7).toInt())
+            .relativeAlt((location.altitude * 1e3).toInt())
+            .vx((velocity.x * 1e2).toInt())
+            .vy((velocity.y * 1e2).toInt())
+            .vz((velocity.z * 1e2).toInt())
+            .hdg((((currentAttitude.yaw * 1e2 + 360) % 360) * 1e2).toInt())
             .build()
     }
 
-    private fun toMavlinkAttitudeMessage(): io.dronefleet.mavlink.common.Attitude {
+    private fun toMavlinkAttitudeMessage(): io.dronefleet.mavlink.common.Attitude? {
+        val currentAttitude = attitude ?: return null
+
         return io.dronefleet.mavlink.common.Attitude.builder()
             .timeBootMs(millisSinceBoot)
-            .roll(attitude!!.roll.toRadians().toFloat())
-            .pitch((attitude!!.pitch).toRadians().toFloat())
-            .yaw((attitude!!.yaw).toRadians().toFloat())
+            .roll(currentAttitude.roll.toRadians().toFloat())
+            .pitch((currentAttitude.pitch).toRadians().toFloat())
+            .yaw(currentAttitude.yaw.toRadians().toFloat())
             .build()
     }
 
@@ -933,7 +1059,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 if (it.voltage < voltage) {
                     voltage = it.voltage
                     current = it.current
-                    remaining = it.remainingPercent
+                    remaining = it.remainingPercent.takeIf { p -> p in 0..100 } ?: -1
                 }
             }
         }
@@ -1019,7 +1145,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             .build()
     }
 
-    private fun toMavlinkGPSFixMessage(): GpsRawInt {
+    private fun toMavlinkGPSFixMessage(): GpsRawInt? {
         val gpsFixType = when (gpsSignalLevel) {
             GPSSignalLevel.LEVEL_0 -> GpsFixType.GPS_FIX_TYPE_NO_FIX
             GPSSignalLevel.LEVEL_1 -> GpsFixType.GPS_FIX_TYPE_NO_FIX
@@ -1031,15 +1157,18 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             else -> GpsFixType.GPS_FIX_TYPE_NO_GPS
         }
 
+        val location = aircraftLocation ?: return null
+        val velocity = aircraftVelocity ?: return null
+
         return GpsRawInt.builder()
             .timeUsec(BigInteger.valueOf(millisSinceBoot / 10))
             .fixType(gpsFixType)
-            .lat((aircraftLocation!!.latitude * 1e7).roundToInt())
-            .lon((aircraftLocation!!.longitude * 1e7).roundToInt())
-            .alt(aircraftLocation!!.altitude.roundToInt())
+            .lat((location.latitude * 1e7).roundToInt())
+            .lon((location.longitude * 1e7).roundToInt())
+            .alt(location.altitude.roundToInt())
             .eph(UINT16_MAX)
             .epv(UINT16_MAX)
-            .vel((aircraftVelocity!!.x * 100).roundToInt())
+            .vel((velocity.x * 100).roundToInt())
             .cog(UINT16_MAX)
             .satellitesVisible(gpsSatelliteCount)
             .build()

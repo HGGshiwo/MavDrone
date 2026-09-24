@@ -75,6 +75,7 @@ val componentID: MavComponent,
     private val usedKeys: MutableList<DJIKey<*>> = ArrayList()
     private val messageSenders: MutableMap<Int, MessageSender<*>> = LinkedHashMap()
     private val broadcasterDisposables: MutableMap<String, Disposable> = LinkedHashMap()
+    private var connectionPollDisposable: Disposable? = null
         val mavlinkParameters: MutableMap<String, MavParameter<*>> = LinkedHashMap()
 
     var isConnected: Boolean = false
@@ -86,6 +87,8 @@ val componentID: MavComponent,
 
     override fun destroy() {
         // Dispose broadcasters
+        connectionPollDisposable?.dispose()
+        connectionPollDisposable = null
         broadcasterDisposables.values.forEach { it.dispose() }
         broadcasterDisposables.clear()
         messageSenders.clear()
@@ -98,13 +101,25 @@ val componentID: MavComponent,
     }
 
     fun connectToProduct() {
-        connectionKey?.let {
-            addDJIListener(connectionKey) { _: Boolean?, newValue: Boolean? ->
+        connectionKey?.let { key ->
+            addDJIListener(key) { _: Boolean?, newValue: Boolean? ->
                 if (newValue != null && newValue) {
                     onConnected()
                 } else {
                     onDisconnected()
                 }
+            }
+
+            // Some aircraft do not reliably deliver the connection push key; poll the
+            // current connection state as well so components still come online.
+            if (connectionPollDisposable == null) {
+                connectionPollDisposable = Observable.interval(CONNECTION_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                    .subscribeOn(Schedulers.newThread())
+                    .subscribe {
+                        if (!isConnected && KeyManager.getInstance().getValue(key) == true) {
+                            onConnected()
+                        }
+                    }
             }
         } ?: onConnected()
     }
@@ -121,6 +136,10 @@ val componentID: MavComponent,
     }
 
     private fun onConnected() {
+        if (isConnected) {
+            return
+        }
+
         compositeDisposable = CompositeDisposable()
 
         bootMillis = System.currentTimeMillis()
@@ -651,7 +670,9 @@ val componentID: MavComponent,
                 try {
                     val msg = messageSupplier()
                     sendMessage(msg)
-                } catch (_: Throwable) { }
+                } catch (e: Throwable) {
+                    log.w("Cannot send message $messageId: ${e.message}")
+                }
             }
             addBroadcaster("message_$messageId", intervalMs, messageBroadcaster)
         }
@@ -662,6 +683,7 @@ val componentID: MavComponent,
     } //endregion
 
     companion object {
+        private const val CONNECTION_POLL_INTERVAL_MS = 2000L
         private const val PROTOCOL_VERSION_TAG = "817c44d8b2b2b0db33d4e0fd4f65da9452b6cf63"
         val PROTOCOL_VERSION_HASH = PROTOCOL_VERSION_TAG.toByteArray().copyOfRange(0, 8)
     }

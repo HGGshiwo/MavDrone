@@ -18,7 +18,13 @@ class MaplibreMapView @JvmOverloads constructor(
         getMapAsync { mapboxMap ->
             var styleLoaded = false
             // 按照官方文档中描述 设置style完成后回调 ，但是如果立即addMarker addPolylne等操作是mapbox获取的style是null 所以不会成功的，需要延时回调onDJIMapReady 或者addMarker addPolylne 时返回null
-            mapboxMap.setStyle(getMapboxStyle()) {
+            val styleStr = getMapboxStyle()
+            val styleBuilder = if (styleStr.trimStart().startsWith("{")) {
+                Style.Builder().fromJson(styleStr)
+            } else {
+                Style.Builder().fromUri(styleStr)
+            }
+            mapboxMap.setStyle(styleBuilder) {
                 styleLoaded = true
             }
 

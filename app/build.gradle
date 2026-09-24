@@ -16,6 +16,8 @@ android {
         versionCode 1
         versionName "1.0"
 
+        multiDexEnabled true
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -81,6 +83,7 @@ dependencies {
     implementation project(":mavlink")
 
     implementation libs.androidx.appcompat
+    implementation libs.androidx.multidex
     implementation libs.androidx.constraintlayout
 
     implementation libs.google.material

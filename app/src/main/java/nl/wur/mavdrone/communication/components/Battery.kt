@@ -9,6 +9,8 @@ import android.annotation.SuppressLint
 import dji.sdk.keyvalue.key.BatteryKey
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.KeyTools
+import dji.sdk.keyvalue.value.battery.BatteryCommunicationStatusType
+import dji.sdk.keyvalue.value.battery.BatteryOverviewValue
 import dji.v5.manager.KeyManager
 
 import io.reactivex.rxjava3.core.Completable
@@ -26,7 +28,7 @@ import io.dronefleet.mavlink.standard.MavType
 import nl.wur.mavdrone.communication.MavConnection
 import nl.wur.mavdrone.utils.RXUtils
 
-class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavComponent, private val componentIndex: Int) : MavBaseComponent(
+class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavComponent, val componentIndex: Int) : MavBaseComponent(
     connectionWR,
     KeyTools.createKey(BatteryKey.KeyConnection, componentIndex),
     componentId,
@@ -45,11 +47,29 @@ class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavCompon
         private set
     private var batteryFullChargeCapacity = UINT16_MAX
     private var batteryChargeRemaining = UINT16_MAX
-    var remainingPercent: Int = UINT16_MAX
-        private set
+    private var djiRemainingPercent = UINT16_MAX
     private var batteryRemainingSeconds = UINT16_MAX
+    private var warnedNoBatteryData = false
+    private var batteryOverviewReceived = false
+    private var lastCommunicationStatus: BatteryCommunicationStatusType? = null
 
-    private var lowWarningThreshold = 20
+    // The DJI remaining-percent key does not push on all models; fall back to
+    // charge-remaining / full-charge-capacity so BATTERY_STATUS carries a valid
+    // battery_remaining (MAVSDK drops the battery when it is unknown).
+    val remainingPercent: Int
+        get() {
+            if (djiRemainingPercent in 0..100) {
+                return djiRemainingPercent
+            }
+            return if (batteryFullChargeCapacity > 0 && batteryChargeRemaining in 0..batteryFullChargeCapacity) {
+                (batteryChargeRemaining * 100.0f / batteryFullChargeCapacity).roundToInt()
+            } else {
+                UINT16_MAX
+            }
+        }
+
+    var lowWarningThreshold = 20
+        private set
     private var criticalWarningThreshold = 5
 
     init {
@@ -78,8 +98,20 @@ class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavCompon
         addDJIListener(KeyTools.createKey(BatteryKey.KeyVoltage, componentIndex)) { value -> voltage = value }
         addDJIListener(KeyTools.createKey(BatteryKey.KeyFullChargeCapacity, componentIndex)) { value -> batteryFullChargeCapacity = value }
         addDJIListener(KeyTools.createKey(BatteryKey.KeyChargeRemaining, componentIndex)) { value -> batteryChargeRemaining = value }
-        addDJIListener(KeyTools.createKey(BatteryKey.KeyChargeRemainingInPercent, componentIndex)) { value -> remainingPercent = value }
+        addDJIListener(KeyTools.createKey(BatteryKey.KeyChargeRemainingInPercent, componentIndex)) { value -> djiRemainingPercent = value }
         addDJIListener(KeyTools.createKey(FlightControllerKey.KeyLowBatteryRTHInfo)) { value -> batteryRemainingSeconds = value.remainingFlightTime }
+
+        // Aggregate battery key (no component index): some models (e.g. Mini 4 Pro) do
+        // not push the per-component battery keys, so also read from the overview list.
+        addDJIListener(KeyTools.createKey(BatteryKey.KeyBatteryOverviews)) { overviews ->
+            updateFromOverviews(overviews)
+        }
+        addDJIListener(KeyTools.createKey(BatteryKey.KeyBatteryCommunicationStatus)) { status ->
+            if (status != lastCommunicationStatus) {
+                lastCommunicationStatus = status
+                log.i("Battery communication status: $status")
+            }
+        }
 
         //endregion
 
@@ -99,6 +131,24 @@ class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavCompon
         )
     }
 
+
+    private fun updateFromOverviews(overviews: List<BatteryOverviewValue>) {
+        if (overviews.isEmpty()) {
+            return
+        }
+
+        val overview = overviews.firstOrNull { it.index == componentIndex && it.isConnected == true }
+            ?: overviews.firstOrNull { it.isConnected == true }
+            ?: return
+
+        if (!batteryOverviewReceived) {
+            batteryOverviewReceived = true
+            log.i("Received battery overview: percent=${overview.chargeRemainingInPercent} voltage=${overview.voltageInmV}mV")
+        }
+
+        overview.chargeRemainingInPercent?.takeIf { it in 0..100 }?.let { djiRemainingPercent = it }
+        overview.voltageInmV?.takeIf { it > 0 }?.let { voltage = it }
+    }
 
     private fun getBatterySpecification(): BatterySpecification {
         val serialNumber = KeyManager.getInstance().getValue(KeyTools.createKey(BatteryKey.KeySerialNumber, componentIndex))
@@ -135,9 +185,15 @@ class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavCompon
     }
 
     private fun toMavlinkBatteryStatusMessage(): BatteryStatus {
-        val chargeState = if (remainingPercent < criticalWarningThreshold) {
+        val remaining = remainingPercent
+        if (remaining !in 0..100 && !warnedNoBatteryData) {
+            warnedNoBatteryData = true
+            log.w("Battery data unavailable: DJI keys provide no valid remaining percent")
+        }
+
+        val chargeState = if (remaining in 0..100 && remaining < criticalWarningThreshold) {
             MavBatteryChargeState.MAV_BATTERY_CHARGE_STATE_CRITICAL
-        } else if (remainingPercent < lowWarningThreshold) {
+        } else if (remaining in 0..100 && remaining < lowWarningThreshold) {
             MavBatteryChargeState.MAV_BATTERY_CHARGE_STATE_LOW
         } else {
             MavBatteryChargeState.MAV_BATTERY_CHARGE_STATE_OK
@@ -151,7 +207,7 @@ class Battery(connectionWR: WeakReference<MavConnection>, componentId: MavCompon
             .voltages(listOf(*batteryVoltages))
             .currentBattery(current)
             .currentConsumed(batteryFullChargeCapacity - batteryChargeRemaining)
-            .batteryRemaining(remainingPercent)
+            .batteryRemaining(if (remaining in 0..100) remaining else -1)
             .timeRemaining(batteryRemainingSeconds)
             .chargeState(chargeState)
             .voltagesExt(listOf(*batteryVoltagesExt))

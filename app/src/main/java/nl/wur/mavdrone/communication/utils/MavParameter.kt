@@ -2,6 +2,7 @@ package nl.wur.mavdrone.communication.utils
 
 import androidx.annotation.Size
 import java.lang.ref.WeakReference
+import java.util.concurrent.TimeUnit
 
 import dji.sdk.keyvalue.key.DJIKey
 
@@ -77,39 +78,43 @@ class MavParameter<T : Any>(
     }
 
     fun sendMavlinkParamValue() {
+        // DJI key reads can hang or fail on some models; always answer with at least
+        // the default value so the GCS parameter fetch completes.
+        val valueSingle = setParameterInterface.value
+            .timeout(PARAM_READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS, Single.just(defaultValue!!))
+            .onErrorResumeNext { Single.just(defaultValue!!) }
+
         if (isExtParameter) {
             compositeDisposable.add(
-                setParameterInterface.value
-                    .subscribe({ value: T ->
-                        val paramType = javaMavlinkParameterConverter.mavlinkParamExtType()
-                        val mavlinkValue = javaMavlinkParameterConverter.toMavlinkExt(value)
+                valueSingle.subscribe({ value: T ->
+                    val paramType = javaMavlinkParameterConverter.mavlinkParamExtType()
+                    val mavlinkValue = javaMavlinkParameterConverter.toMavlinkExt(value)
 
-                        val paramExtValue = ParamExtValue.builder()
-                            .paramId(name)
-                            .paramValue(mavlinkValue)
-                            .paramType(paramType)
-                            .paramIndex(index)
-                            .paramCount(totalNumberOfParameters)
-                            .build()
-                        sendMessage(paramExtValue)
-                    }, { error -> log.w(error.message ?: "Cannot send value for parameter $name") })
+                    val paramExtValue = ParamExtValue.builder()
+                        .paramId(name)
+                        .paramValue(mavlinkValue)
+                        .paramType(paramType)
+                        .paramIndex(index)
+                        .paramCount(totalNumberOfParameters)
+                        .build()
+                    sendMessage(paramExtValue)
+                }, { error -> log.w(error.message ?: "Cannot send value for parameter $name") })
             )
         } else {
             compositeDisposable.add(
-                setParameterInterface.value
-                    .subscribe({ value: T ->
-                        val paramType = javaMavlinkParameterConverter.mavlinkParamType()
-                        val mavlinkValue = javaMavlinkParameterConverter.toMavlink(value)
+                valueSingle.subscribe({ value: T ->
+                    val paramType = javaMavlinkParameterConverter.mavlinkParamType()
+                    val mavlinkValue = javaMavlinkParameterConverter.toMavlink(value)
 
-                        val paramValue = ParamValue.builder()
-                            .paramId(name)
-                            .paramValue(mavlinkValue)
-                            .paramType(paramType)
-                            .paramIndex(index)
-                            .paramCount(totalNumberOfParameters)
-                            .build()
-                        sendMessage(paramValue)
-                    }, { error -> log.w(error.message ?: "Cannot send value for parameter $name") })
+                    val paramValue = ParamValue.builder()
+                        .paramId(name)
+                        .paramValue(mavlinkValue)
+                        .paramType(paramType)
+                        .paramIndex(index)
+                        .paramCount(totalNumberOfParameters)
+                        .build()
+                    sendMessage(paramValue)
+                }, { error -> log.w(error.message ?: "Cannot send value for parameter $name") })
             )
         }
     }
@@ -131,7 +136,12 @@ class MavParameter<T : Any>(
                     sendMavlinkParamValue()
                     parameterChangedCallback?.parameterChanged(value)
                     connectionWR.get()!!.showToast("Updated param $name", 2)
-                }, { error -> log.w(error.message ?: "Cannot update parameter value $name") })
+                }, { error ->
+                    log.w("Cannot update parameter value $name: ${error.message}")
+                    // Respond with the unchanged value so the GCS does not time out
+                    // waiting for the ack of a rejected set.
+                    sendMavlinkParamValue()
+                })
         )
     }
 
@@ -263,6 +273,7 @@ class MavParameter<T : Any>(
     } //endregion
 
     companion object {
+        private const val PARAM_READ_TIMEOUT_MS = 300
         //region: class methods
         fun fromDJIParameter(
             connectionWR: WeakReference<MavConnection>,

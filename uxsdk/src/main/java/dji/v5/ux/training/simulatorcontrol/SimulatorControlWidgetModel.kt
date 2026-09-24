@@ -27,6 +27,10 @@ import dji.sdk.keyvalue.value.common.LocationCoordinate2D
 import dji.sdk.keyvalue.value.flightcontroller.SimulatorInitializationSettings
 import dji.sdk.keyvalue.value.flightcontroller.SimulatorState
 import dji.sdk.keyvalue.key.KeyTools
+import dji.v5.common.callback.CommonCallbacks
+import dji.v5.common.error.IDJIError
+import dji.v5.manager.aircraft.simulator.InitializationSettings
+import dji.v5.manager.aircraft.simulator.SimulatorManager
 import dji.v5.ux.core.base.DJISDKModel
 import dji.v5.ux.core.base.WidgetModel
 import dji.v5.ux.core.communication.ObservableInMemoryKeyedStore
@@ -64,6 +68,13 @@ class SimulatorControlWidgetModel(
         bindDataProcessor(
             KeyTools.createKey(
                 FlightControllerKey.KeyIsSimulatorStarted), simulatorActiveDataProcessor)
+
+        // ProductKey.KeyConnection is not delivered on some aircraft (e.g. Mini 4 Pro via
+        // RC-N1), which leaves the simulator control permanently disabled although the
+        // aircraft is ready. Bind the flight controller connection to the same processor.
+        bindDataProcessor(
+            KeyTools.createKey(
+                FlightControllerKey.KeyConnection), productConnectionProcessor)
     }
 
     override fun inCleanup() { // No clean up needed
@@ -81,9 +92,28 @@ class SimulatorControlWidgetModel(
      * @return Completable to determine status of the action
      */
     fun startSimulator(initializationData: SimulatorInitializationSettings): Completable {
-        return djiSdkModel.performActionWithOutResult(
-            KeyTools.createKey(
-                FlightControllerKey.KeyStartSimulator), initializationData)
+        // Use the official SimulatorManager path instead of the raw KeyStartSimulator
+        // action key: enableSimulator also stores the initialization data and starts
+        // the internal state feed that addSimulatorStateListener callbacks rely on.
+        return Completable.create { emitter ->
+            val settings = InitializationSettings.createInstance(
+                LocationCoordinate2D(
+                    initializationData.latitude,
+                    initializationData.longitude),
+                initializationData.satelliteCount)
+
+            SimulatorManager.getInstance().enableSimulator(
+                settings,
+                object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
+                        emitter.onComplete()
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        emitter.onError(RuntimeException("enableSimulator failed: $error"))
+                    }
+                })
+        }
     }
 
     /**
@@ -92,9 +122,18 @@ class SimulatorControlWidgetModel(
      * @return Completable to determine status of the action
      */
     fun stopSimulator(): Completable {
-        return djiSdkModel.performActionWithOutResult(
-            KeyTools.createKey(
-                FlightControllerKey.KeyStopSimulator))
+        return Completable.create { emitter ->
+            SimulatorManager.getInstance().disableSimulator(
+                object : CommonCallbacks.CompletionCallback {
+                    override fun onSuccess() {
+                        emitter.onComplete()
+                    }
+
+                    override fun onFailure(error: IDJIError) {
+                        emitter.onError(RuntimeException("disableSimulator failed: $error"))
+                    }
+                })
+        }
     }
 
     /**

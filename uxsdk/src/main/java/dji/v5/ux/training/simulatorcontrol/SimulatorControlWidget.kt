@@ -661,7 +661,12 @@ open class SimulatorControlWidget @JvmOverloads constructor(
 
     private fun onProductChanged(it: Boolean) {
         widgetStateDataProcessor.onNext(ProductConnected(it))
-        isEnabled = it
+        // Connection keys (ProductKey/FlightControllerKey) are not pushed on some
+        // aircraft (e.g. Mini 4 Pro via RC-N1) even though the product is connected,
+        // so the processor would stay at its initial false value and keep the switch
+        // permanently disabled. Keep the widget enabled and let the SDK reject
+        // startSimulator when there is no connected aircraft.
+        isEnabled = true
     }
 
     override fun getIdealDimensionRatioString(): String {
@@ -877,7 +882,10 @@ open class SimulatorControlWidget @JvmOverloads constructor(
         satelliteCountSeekBar.max = 20
         satelliteCountSeekBar.addOnSeekBarChangeListener(seekBarChangeListener)
         satelliteCountSeekBar.enable(true)
-        satelliteCountSeekBar.progress = 1
+        satelliteCountSeekBar.progress = DEFAULT_SATELLITE_COUNT
+
+        latitudeEditText.setText(DEFAULT_LATITUDE.toString())
+        longitudeEditText.setText(DEFAULT_LONGITUDE.toString())
 
         frequencySeekBar.valueTextSize = DisplayUtil.pxToDip(context, 35f)
         frequencySeekBar.max = 150
@@ -1359,6 +1367,9 @@ open class SimulatorControlWidget @JvmOverloads constructor(
         private const val WIND_DIRECTION_Z = 2
         private const val MIN_FREQUENCY = 2
         private const val DEFAULT_FREQUENCY = 20
+        private const val DEFAULT_LATITUDE = 30.11269
+        private const val DEFAULT_LONGITUDE = 120.1429
+        private const val DEFAULT_SATELLITE_COUNT = 20
         private const val SIMULATION_MIN_WIND_SPEED = -20
         private const val SIMULATION_MAX_WIND_SPEED = 20
         private const val WIND_SEEK_BAR_MAX = 40

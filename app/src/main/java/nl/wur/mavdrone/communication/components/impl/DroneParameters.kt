@@ -11,6 +11,7 @@ import nl.wur.mavdrone.communication.components.BaseComponent
 import nl.wur.mavdrone.communication.components.Drone
 import nl.wur.mavdrone.communication.utils.MavParameter
 import nl.wur.mavdrone.communication.utils.ParameterConverter
+import nl.wur.mavdrone.utils.GenericPreferenceManager
 import java.lang.ref.WeakReference
 
 class DroneParameters(
@@ -130,6 +131,33 @@ class DroneParameters(
         )
         droneWR.get()?.addParameter(comDisarmLand)
 
+        //endregion
+        //region: param ARMING_CHECK
+        val armingCheck = MavParameter.fromAndroidParameter(
+            connectionWR,
+            droneWR,
+            "ARMING_CHECK",
+            1,
+            0,
+            1,
+            ParameterConverter.intConverter,
+            false
+        ) { checks: Int ->
+            droneWR.get()?.prearmChecksEnabled = checks != 0
+        }
+        armingCheck.setMetadata(
+            "Common",
+            "Arming",
+            "Pre-arm checks bitmask",
+            "Bitmask of pre-arm checks to run before arming or takeoff. 0 disables all pre-arm checks, 1 enables all checks. Other ArduPilot check bits are accepted but treated as enabled.",
+            ""
+        )
+        droneWR.get()?.addParameter(armingCheck)
+
+        // Sync the initial state with the persisted value
+        GenericPreferenceManager<Int>(connectionWR.get()!!.androidPreferences)
+            .get("ARMING_CHECK", 1)
+            .let { droneWR.get()?.prearmChecksEnabled = it != 0 }
         //endregion
         //region: param FENCE_ACTION
         val fenceAction = MavParameter.fromAndroidParameter(
