@@ -18,6 +18,7 @@ import nl.wur.mavdrone.communication.MavConnection
 import nl.wur.mavdrone.utils.FileLogTree
 import nl.wur.mavdrone.utils.Logger
 import nl.wur.mavdrone.utils.RxException
+import nl.wur.mavdrone.video.DownCamStreamer
 
 import timber.log.Timber
 
@@ -36,6 +37,7 @@ class MavService : Service() {
     val mavlinkCommunicationSubject: BehaviorSubject<MavManager.MavlinkManagerCommunicationModel> = BehaviorSubject.create()
     private var compositeDisposable: CompositeDisposable? = null
     private var backgroundThread: MavConnection? = null
+    private var downCamStreamer: DownCamStreamer? = null
 
     private val fileLogger by lazy { FileLogTree(this) }
 
@@ -75,11 +77,19 @@ class MavService : Service() {
 
         createMAVLinkConnectionInBackground()
 
+        // Downward camera MJPEG stream for the ROS ground station
+        if (getSharedPreferences("default_preferences", MODE_PRIVATE).getBoolean("down_cam_enabled", true)) {
+            downCamStreamer = DownCamStreamer(port = 8090).also { it.start() }
+        }
+
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         LOG.i("Stopping Mavlink service")
+
+        downCamStreamer?.stop()
+        downCamStreamer = null
 
         compositeDisposable?.dispose()
 

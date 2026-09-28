@@ -47,6 +47,7 @@ import io.dronefleet.mavlink.util.EnumValue
 import nl.wur.mavdrone.communication.MavConnection
 import nl.wur.mavdrone.communication.utils.CustomMode.MAIN_MODE
 import nl.wur.mavdrone.communication.utils.CustomMode.MAIN_MODE.Companion.fromValue
+import nl.wur.mavdrone.communication.utils.CustomMode.SUB_MODE
 import nl.wur.mavdrone.communication.utils.EnumUtils.Companion.listToEnum
 import nl.wur.mavdrone.communication.utils.MavMessageWithComponentID
 import nl.wur.mavdrone.communication.utils.MavParameter
@@ -71,6 +72,7 @@ val componentID: MavComponent,
     private var mavState = MavState.MAV_STATE_UNINIT
     private val mavModeFlags: MutableList<MavModeFlag> = ArrayList()
     protected var customMode = 0
+    protected var customSubMode = 0
 
     private val usedKeys: MutableList<DJIKey<*>> = ArrayList()
     private val messageSenders: MutableMap<Int, MessageSender<*>> = LinkedHashMap()
@@ -435,6 +437,10 @@ val componentID: MavComponent,
         return fromValue(customMode)
     }
 
+    fun setCustomSubMode(subMode: SUB_MODE) {
+        this.customSubMode = subMode.value
+    }
+
     //region: parameters
     private fun onParamRequestList(msg: MavlinkMessage<*>) {
         val payload = msg.payload as ParamRequestList
@@ -600,7 +606,10 @@ val componentID: MavComponent,
             .autopilot(mavAutopilot)
             .systemStatus(mavState)
             .baseMode(currentMavModeFlags)
-            .customMode(customMode.toLong())
+            // PX4 packing: main mode in bits 16-23, auto sub mode in bits 24-31.
+            // GCS implementations (MAVSDK) decode custom_mode in this layout; sending
+            // the raw main value makes every mode decode to Unknown.
+            .customMode(((customMode shl 16) or (customSubMode shl 24)).toLong())
             .build()
     }
 

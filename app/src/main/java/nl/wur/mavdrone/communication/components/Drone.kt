@@ -23,6 +23,7 @@ import dji.v5.manager.aircraft.waypoint3.model.WaypointMissionExecuteState
 
 import io.reactivex.rxjava3.core.Completable
 import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Single
 import io.reactivex.rxjava3.schedulers.Schedulers
 
 import io.dronefleet.mavlink.MavlinkMessage
@@ -38,6 +39,8 @@ import io.dronefleet.mavlink.common.GlobalPositionInt
 import io.dronefleet.mavlink.common.GpsFixType
 import io.dronefleet.mavlink.common.GpsRawInt
 import io.dronefleet.mavlink.common.HomePosition
+import io.dronefleet.mavlink.common.LocalPositionNed
+import io.dronefleet.mavlink.common.SetPositionTargetLocalNed
 import io.dronefleet.mavlink.common.MavCmd
 import io.dronefleet.mavlink.common.MavFrame
 import io.dronefleet.mavlink.common.MavGoto
@@ -48,6 +51,7 @@ import io.dronefleet.mavlink.common.MavSysStatusSensor
 import io.dronefleet.mavlink.common.MavVtolState
 import io.dronefleet.mavlink.common.Statustext
 import io.dronefleet.mavlink.common.SysStatus
+import io.dronefleet.mavlink.common.VfrHud
 import io.dronefleet.mavlink.standard.MavAutopilot
 import io.dronefleet.mavlink.standard.MavComponent
 import io.dronefleet.mavlink.standard.MavModeFlag
@@ -66,6 +70,7 @@ import nl.wur.mavdrone.communication.components.impl.OnBoardCamera
 import nl.wur.mavdrone.communication.components.impl.RTK
 import nl.wur.mavdrone.communication.components.impl.Radar
 import nl.wur.mavdrone.communication.components.impl.RemoteController
+import nl.wur.mavdrone.communication.components.impl.VirtualStickManager
 import nl.wur.mavdrone.communication.components.impl.mission.WaypointMission
 import nl.wur.mavdrone.communication.utils.ComponentInfoGenerator
 import nl.wur.mavdrone.communication.utils.CustomMode.MAIN_MODE
@@ -83,6 +88,7 @@ import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandDe
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandFailed
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandTemporarilyRejected
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandUnsupported
+import nl.wur.mavdrone.utils.MavlinkTexts
 import nl.wur.mavdrone.utils.RXUtils
 import nl.wur.mavdrone.utils.RXUtils.Companion.djiGetValue
 import nl.wur.mavdrone.utils.RXUtils.Companion.djiPerformAction
@@ -90,7 +96,10 @@ import nl.wur.mavdrone.utils.RXUtils.Companion.djiSetValue
 import nl.wur.mavdrone.utils.RxException.DroneNotArmedException
 import nl.wur.mavdrone.utils.RxException.NoMissionUploadedException
 import nl.wur.mavdrone.utils.toRadians
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 // Suppress deprecation warnings because we use some unstable Mavlink commands
 @Suppress("deprecation")
@@ -112,6 +121,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     private val rtk: RTK
     private val remoteController: RemoteController
     private val deviceHealth: DeviceHealth
+    private val virtualStickManager: VirtualStickManager
     private var onboardCamera: OnBoardCamera? = null
 
     private var attitude: Attitude? = null
@@ -147,7 +157,6 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
     var productType: ProductType = ProductType.UNKNOWN
         private set
-    private var customSubMode = SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_READY
 
     private var overriddenKMZ: KMZ? = null
     private var overriddenWaypointId = 0
@@ -170,6 +179,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         healthManager = HealthManager(connectionWR, WeakReference(missionManager), WeakReference(rtk))
         remoteController = RemoteController(connectionWR, droneWR)
         deviceHealth = DeviceHealth(connectionWR, droneWR)
+        virtualStickManager = VirtualStickManager(connectionWR, droneWR) { attitude?.yaw }
         if (connectionWR.get()?.androidPreferences?.getBoolean("ENABLE_ONBOARD", true) != false) {
             onboardCamera = OnBoardCamera(connectionWR, droneWR)
         }
@@ -189,6 +199,25 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                         simulatorHomeSet = false
                     }
                 }, { error -> RXUtils.handleError(error) })
+        )
+
+        // The simulator battery drains with simulated flight time and the firmware then
+        // interrupts long test flights with its low battery RTH; disable it while the
+        // simulator is running and restore the default (enabled) when it stops
+        compositeDisposable.add(
+            Observable
+                .interval(2000, 5000, TimeUnit.MILLISECONDS)
+                .subscribeOn(Schedulers.io())
+                .observeOn(Schedulers.io())
+                .flatMapSingle { Single.fromCallable { SimulatorManager.getInstance().isSimulatorEnabled } }
+                .distinctUntilChanged()
+                .flatMapCompletable { simEnabled ->
+                    djiSetValue(FlightControllerKey.KeyLowBatteryRTHEnabled, !simEnabled)
+                }
+                .subscribe(
+                    { log.i("Changed low battery RTH state because simulation changed") },
+                    { error -> RXUtils.handleError(error) }
+                )
         )
     }
 
@@ -214,18 +243,23 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 FlightMode.ATTI -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
                     removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_ALTCTL)
                 }
 
-                FlightMode.GPS_NORMAL, FlightMode.GPS_TRIPOD, FlightMode.GPS_SPORT -> addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
+                FlightMode.GPS_NORMAL, FlightMode.GPS_TRIPOD, FlightMode.GPS_SPORT, FlightMode.TAKE_OFF_READY -> {
+                    addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_POSCTL)
+                }
                 FlightMode.MOTOR_START -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)
 
                     armingTime = System.currentTimeMillis() * 1000
                 }
 
-                FlightMode.POI, FlightMode.TAKE_OFF_READY, FlightMode.VIRTUAL_STICK, FlightMode.PANO, FlightMode.SMART_FLIGHT, FlightMode.SMART_FLY, FlightMode.ATTI_LANDING, FlightMode.CLICK_GO, FlightMode.CINEMATIC, FlightMode.DRAW, FlightMode.GPS_NOVICE, FlightMode.QUICK_MOVIE, FlightMode.TAP_FLY, FlightMode.MASTER_SHOT, FlightMode.APAS, FlightMode.TIME_LAPSE, FlightMode.UNKNOWN -> {}
+                FlightMode.POI, FlightMode.VIRTUAL_STICK, FlightMode.PANO, FlightMode.SMART_FLIGHT, FlightMode.SMART_FLY, FlightMode.ATTI_LANDING, FlightMode.CLICK_GO, FlightMode.CINEMATIC, FlightMode.DRAW, FlightMode.GPS_NOVICE, FlightMode.QUICK_MOVIE, FlightMode.TAP_FLY, FlightMode.MASTER_SHOT, FlightMode.APAS, FlightMode.TIME_LAPSE, FlightMode.UNKNOWN -> {}
                 FlightMode.AUTO_TAKE_OFF -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO)
                     setCustomSubMode(SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_TAKEOFF)
 
                     mavLandedState = MavLandedState.MAV_LANDED_STATE_TAKEOFF
@@ -234,6 +268,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
                 FlightMode.AUTO_LANDING -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO)
                     setCustomSubMode(SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_LAND)
 
                     mavLandedState = MavLandedState.MAV_LANDED_STATE_LANDING
@@ -241,6 +276,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
                 FlightMode.FORCE_LANDING -> {
                     removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO)
                     setCustomSubMode(SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_LAND)
 
                     mavLandedState = MavLandedState.MAV_LANDED_STATE_LANDING
@@ -248,7 +284,9 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
                 FlightMode.GO_HOME -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO)
                     setCustomSubMode(SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_RTL)
+                    reportGoHomeReason()
                 }
 
                 FlightMode.WAYPOINT -> {
@@ -260,6 +298,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 FlightMode.AUTO_AVOIDANCE -> addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
                 FlightMode.FOLLOW_ME -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO)
                     setCustomSubMode(SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_FOLLOW_TARGET)
                     log.i("Not implemented flight mode: " + flightMode.name)
                 }
@@ -324,10 +363,40 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         addMavlinkMessageSender(ComponentMetadata::class.java) { this.toMavlinkComponentMetadataMessage() }
         addMavlinkMessageSender(GlobalPositionInt::class.java, { this.toMavlinkGlobalPositionIntMessage() }, 100, true)
         addMavlinkMessageSender(Altitude::class.java, { this.toMavlinkAltitudeMessage() }, 100, true)
+        addMavlinkMessageSender(LocalPositionNed::class.java, { this.toMavlinkLocalPositionNedMessage() }, 100, true)
+        addMavlinkMessageSender(VfrHud::class.java, { this.toMavlinkVfrHudMessage() }, 200, true)
         addMavlinkMessageSender(FlightInformation::class.java) { this.toMavlinkFlightInformationMessage() }
 
         // Add message listeners
         addMavlinkListener(CommandCancel::class.java) { msg -> this.onCommandCancel(msg) }
+        addMavlinkListener(SetPositionTargetLocalNed::class.java) { msg -> this.onSetPositionTargetLocalNed(msg) }
+
+        // Forward the firmware battery failsafe states to the GCS; DJI only reports
+        // them on its own UI, otherwise an auto RTH appears out of nowhere
+        addDJIListener(KeyTools.createKey(FlightControllerKey.KeyIsLowBatteryWarning)) { value ->
+            if (value) {
+                log.w("Low battery warning from firmware")
+                sendMessage(Statustext.builder().severity(MavSeverity.MAV_SEVERITY_WARNING).text("Low battery warning").build())
+            }
+        }
+        addDJIListener(KeyTools.createKey(FlightControllerKey.KeyIsSeriousLowBatteryWarning)) { value ->
+            if (value) {
+                log.w("Serious low battery warning from firmware")
+                sendMessage(Statustext.builder().severity(MavSeverity.MAV_SEVERITY_ERROR).text("Serious low battery: landing").build())
+            }
+        }
+        addDJIListener(KeyTools.createKey(FlightControllerKey.KeyRequireGoHomeByLowBatteryVoltage)) { value ->
+            if (value) {
+                log.w("Firmware triggered low battery RTH (voltage)")
+                sendMessage(Statustext.builder().severity(MavSeverity.MAV_SEVERITY_ERROR).text("Low battery: firmware RTH").build())
+            }
+        }
+        addDJIListener(KeyTools.createKey(FlightControllerKey.KeyRequireGoHomeBySmartBatteryPercent)) { value ->
+            if (value) {
+                log.w("Firmware triggered low battery RTH (percent)")
+                sendMessage(Statustext.builder().severity(MavSeverity.MAV_SEVERITY_ERROR).text("Low battery: firmware RTH").build())
+            }
+        }
 
         // Initialize landed state after 1 second to make sure we have both the isFlying key as the flightMode key
         compositeDisposable.add(
@@ -354,6 +423,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     }
 
     override fun destroy() {
+        virtualStickManager.stopAll()
         SimulatorManager.getInstance().removeSimulatorStateListener(simulatorStatusListener)
         missionManager.destroy()
         flightLogManager.destroy()
@@ -572,19 +642,31 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 }
 
                 MavCmd.MAV_CMD_NAV_TAKEOFF -> {
-                    if (!containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)) {
-                        log.w("Cannot takeoff because remote controller is not in a stabilized mode!")
+                    if (!containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
+                        && !containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                    ) {
+                        log.w("Cannot takeoff because remote controller is not in a stabilized or guided mode!")
                         sendMessage(commandDenied(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId))
                     } else if (!containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)) {
                         log.w("Cannot takeoff because the drone is not armed!")
                         sendMessage(commandDenied(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId))
                     } else {
+                        val requestedHeight = payload.param7()
+
+                        // DJI auto takeoff only hovers at ~1.2 m (the firmware minimum);
+                        // targets below that are covered by the plain takeoff, a higher
+                        // NAV_TAKEOFF target is climbed with the virtual stick afterwards
+                        val climbTarget =
+                            if (!requestedHeight.isNaN() && requestedHeight > VirtualStickManager.MIN_TAKEOFF_HEIGHT) requestedHeight
+                            else null
+
                         compositeDisposable.add(
-                            djiPerformAction(FlightControllerKey.KeyStartTakeoff)
+                            performStartTakeoff()
                                 .subscribe(
                                     {
                                         sendMessage(commandAccepted(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId))
                                         takeOffTime = System.currentTimeMillis() * 1000
+                                        climbTarget?.let { virtualStickManager.climbToHeight(it) }
                                     },
                                     { error ->
                                         onError(
@@ -636,7 +718,10 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                         compositeDisposable.add(
                             djiPerformAction(FlightControllerKey.KeyStartAutoLanding)
                                 .subscribe(
-                                    { sendMessage(commandAccepted(payload.command().entry(), msg.originSystemId, msg.originComponentId)) },
+                                    {
+                                        sendMessage(commandAccepted(payload.command().entry(), msg.originSystemId, msg.originComponentId))
+                                        watchLandingConfirmation()
+                                    },
                                     { error ->
                                         onError(
                                             error,
@@ -652,6 +737,13 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 }
 
                 MavCmd.MAV_CMD_NAV_RETURN_TO_LAUNCH -> {
+                    // Attribute a firmware RTH to the GCS command that caused it
+                    sendMessage(
+                        Statustext.builder()
+                            .severity(MavSeverity.MAV_SEVERITY_WARNING)
+                            .text(MavlinkTexts.truncateStatustext("RTH commanded by GCS ${msg.originSystemId}/${msg.originComponentId}"))
+                            .build()
+                    )
                     compositeDisposable.add(
                         djiPerformAction(FlightControllerKey.KeyStartGoHome)
                             .subscribe(
@@ -691,7 +783,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                         sendMessage(
                             Statustext.builder()
                                 .severity(MavSeverity.MAV_SEVERITY_ERROR)
-                                .text("PreArm: $check")
+                                .text(MavlinkTexts.truncateStatustext("PreArm: $check"))
                                 .build()
                         )
                     }
@@ -717,25 +809,159 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         return false
     }
 
+    // Offboard velocity setpoints from the GCS (MAVSDK offboard sends these at 20 Hz).
+    // Only the velocity components are used, DJI has no horizontal position mode; the
+    // GCS runs its own closed-loop control on top of these.
+    private fun onSetPositionTargetLocalNed(msg: MavlinkMessage<*>) {
+        val payload = msg.payload as SetPositionTargetLocalNed
+
+        if (payload.targetSystem() != systemID
+            || (payload.targetComponent() != EnumValue.create(componentID).value() && payload.targetComponent() != 0)
+        ) {
+            return
+        }
+
+        // Never engage the virtual stick on the ground
+        if (!isFlying && !motorsOn) {
+            return
+        }
+
+        // type mask bits 3-5 mark the velocity components as ignored
+        val typeMask = payload.typeMask().value()
+        if ((typeMask and VELOCITY_IGNORED_MASK) == VELOCITY_IGNORED_MASK) {
+            return
+        }
+
+        val forward: Double
+        val right: Double
+        when (payload.coordinateFrame().entry()) {
+            MavFrame.MAV_FRAME_BODY_NED -> {
+                forward = payload.vx().toDouble()
+                right = payload.vy().toDouble()
+            }
+
+            MavFrame.MAV_FRAME_LOCAL_NED -> {
+                // Rotate the NED velocity into the body frame with the current heading
+                val yaw = attitude?.yaw?.toRadians() ?: return
+                val north = payload.vx().toDouble()
+                val east = payload.vy().toDouble()
+                forward = north * cos(yaw) + east * sin(yaw)
+                right = -north * sin(yaw) + east * cos(yaw)
+            }
+
+            else -> return
+        }
+
+        virtualStickManager.feedVelocitySetpoint(
+            forward, right,
+            payload.vz().toDouble(),   // down positive, DJI vertical velocity is up positive
+            Math.toDegrees(payload.yawRate().toDouble())
+        )
+    }
+
+    // An unexpected firmware RTH is hard to attribute afterwards (failsafe, low
+    // battery, RC action...); capture the FC's own assessment the moment the GO_HOME
+    // mode is reported and broadcast it to the GCS
+    private fun reportGoHomeReason() {
+        compositeDisposable.add(
+            Single.zip(
+                djiGetValue(FlightControllerKey.KeyIsFailSafe),
+                djiGetValue(FlightControllerKey.KeyFailsafeAction),
+                djiGetValue(FlightControllerKey.KeyRequireGoHomeByLowBatteryVoltage),
+                djiGetValue(FlightControllerKey.KeyRequireGoHomeBySmartBatteryPercent),
+                djiGetValue(FlightControllerKey.KeyBatteryPowerPercent)
+            ) { failsafe, failsafeAction, byVoltage, byPercent, batteryPercent ->
+                "RTL: fs=$failsafe/$failsafeAction lowV=$byVoltage lowP=$byPercent batt=$batteryPercent%"
+            }.subscribe(
+                { reason ->
+                    log.w("Go home reason: $reason")
+                    sendMessage(
+                        Statustext.builder()
+                            .severity(MavSeverity.MAV_SEVERITY_WARNING)
+                            .text(MavlinkTexts.truncateStatustext(reason))
+                            .build()
+                    )
+                },
+                { error -> RXUtils.handleError(error) }
+            )
+        )
+    }
+
+    // StartTakeoff races the FC connection coming back online after an app restart or
+    // link rebuild: KeyManager returns REQUEST_HANDLER_NOT_FOUND (-1) until the FC
+    // component is up again. Retry briefly before giving up so GCS commands sent in
+    // that window succeed once the connection settles.
+    private fun performStartTakeoff(): Completable =
+        Completable.create { emitter ->
+            emitter.setDisposable(
+                Observable.interval(0, TAKEOFF_RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                    .take(TAKEOFF_RETRY_COUNT.toLong())
+                    .subscribe({
+                        djiPerformAction(FlightControllerKey.KeyStartTakeoff)
+                            .subscribe(
+                                { emitter.onComplete() },
+                                { error ->
+                                    log.w("StartTakeoff attempt failed, retrying: ${error.message}")
+                                }
+                            )
+                    }, { emitter.tryOnError(it) })
+            )
+        }.timeout(
+            TAKEOFF_RETRY_INTERVAL_MS * (TAKEOFF_RETRY_COUNT + 1),
+            TimeUnit.MILLISECONDS,
+            Schedulers.newThread()
+        )
+
+    // The firmware pauses auto landing at the confirmation height and waits for the
+    // DJI app "slide to confirm landing"; confirm via the SDK instead so GCS-initiated
+    // landings complete without manual interaction
+    private fun watchLandingConfirmation() {
+        compositeDisposable.add(
+            Observable.interval(500, TimeUnit.MILLISECONDS)
+                .take(LANDING_CONFIRMATION_POLL_COUNT)
+                .flatMapSingle { djiGetValue(FlightControllerKey.KeyIsLandingConfirmationNeeded) }
+                .filter { it }
+                .firstOrError()
+                .flatMapCompletable {
+                    log.i("Landing confirmation needed, confirming automatically")
+                    djiPerformAction(FlightControllerKey.KeyConfirmLanding)
+                }
+                .subscribe(
+                    { log.i("Landing confirmation done") },
+                    { error ->
+                        if (error is NoSuchElementException) {
+                            // No confirmation request within the watch window
+                            log.i("No landing confirmation was requested")
+                        } else {
+                            RXUtils.handleError(error)
+                        }
+                    }
+                )
+        )
+    }
+
     private fun onCommandCancel(msg: MavlinkMessage<*>) {
         val payload = msg.payload as CommandCancel
 
         if (payload.targetSystem() == systemID && (payload.targetComponent() == EnumValue.create(componentID).value() || payload.targetComponent() == 0)) {
             when (payload.command().entry()) {
-                MavCmd.MAV_CMD_NAV_TAKEOFF -> compositeDisposable.add(
-                    djiPerformAction(FlightControllerKey.KeyStopTakeoff)
-                        .subscribe(
-                            { sendMessage(commandCanceled(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId)) },
-                            { error ->
-                                onError(
-                                    error,
-                                    StandardResponses::commandFailed,
-                                    MavCmd.MAV_CMD_NAV_TAKEOFF,
-                                    msg.originSystemId,
-                                    msg.originComponentId
-                                )
-                            })
-                )
+                MavCmd.MAV_CMD_NAV_TAKEOFF -> {
+                    virtualStickManager.stopClimb()
+                    compositeDisposable.add(
+                        djiPerformAction(FlightControllerKey.KeyStopTakeoff)
+                            .subscribe(
+                                { sendMessage(commandCanceled(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId)) },
+                                { error ->
+                                    onError(
+                                        error,
+                                        StandardResponses::commandFailed,
+                                        MavCmd.MAV_CMD_NAV_TAKEOFF,
+                                        msg.originSystemId,
+                                        msg.originComponentId
+                                    )
+                                })
+                    )
+                }
 
                 MavCmd.MAV_CMD_DO_LAND_START, MavCmd.MAV_CMD_NAV_LAND -> compositeDisposable.add(
                     djiPerformAction(FlightControllerKey.KeyStopAutoLanding)
@@ -828,7 +1054,9 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         }
 
         val location = state.location ?: return
-        aircraftLocation = LocationCoordinate3D(location.latitude, location.longitude, state.positionZ.toDouble())
+        // SimulatorState positionX/Y/Z are in the takeoff-centered NED frame, so the
+        // Z axis points down and must be negated to get an up-positive altitude
+        aircraftLocation = LocationCoordinate3D(location.latitude, location.longitude, -state.positionZ.toDouble())
         attitude = Attitude(state.pitch.toDouble(), state.roll.toDouble(), state.yaw.toDouble())
 
         if (!simulatorHomeSet) {
@@ -846,14 +1074,28 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
         // MAVSDK may send custom PX4 modes
         if (containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED)) {
-            val customFlightMode = MAIN_MODE.fromValue(customMode)
-            val customSubFlightMode = SUB_MODE.fromValue(subMode)
+            val customFlightMode: MAIN_MODE
+            val customSubFlightMode: SUB_MODE
+            try {
+                customFlightMode = MAIN_MODE.fromValue(customMode)
+                customSubFlightMode = SUB_MODE.fromValue(subMode)
+            } catch (e: IllegalArgumentException) {
+                log.w("Cannot change mode: unknown custom mode $customMode/$subMode")
+                sendMessage(commandFailed(MavCmd.MAV_CMD_DO_SET_MODE, systemId, componentId))
+                return
+            }
 
             log.i("Set mode to $customFlightMode-$customSubFlightMode")
 
-            if (customFlightMode == MAIN_MODE.PX4_CUSTOM_MAIN_MODE_OFFBOARD) {
-                setCustomMode(customFlightMode)
-                setCustomSubMode(customSubFlightMode)
+            if (customFlightMode == MAIN_MODE.PX4_CUSTOM_MAIN_MODE_OFFBOARD
+                || (customFlightMode == MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO && customSubFlightMode == SUB_MODE.INVALID)
+            ) {
+                // PX4 OFFBOARD and ArduPilot-style GUIDED (main mode 4 without a PX4 auto
+                // sub mode) both map to the GCS-controlled guided state, since DJI has no
+                // dedicated mode for it
+                addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+                setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_OFFBOARD)
+                setCustomSubMode(SUB_MODE.INVALID)
                 sendMessage(commandAccepted(MavCmd.MAV_CMD_DO_SET_MODE, systemId, componentId))
             } else if (customFlightMode == MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO && customSubFlightMode == SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_MISSION) {
                 // If there is a mission present and current status is paused, resume mission
@@ -920,6 +1162,13 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                     )
                 }
             } else if (customFlightMode == MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO && customSubFlightMode == SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_RTL) {
+                // Attribute a firmware RTH to the GCS mode switch that caused it
+                sendMessage(
+                    Statustext.builder()
+                        .severity(MavSeverity.MAV_SEVERITY_WARNING)
+                        .text(MavlinkTexts.truncateStatustext("RTH (mode) commanded by GCS $systemId/$componentId"))
+                        .build()
+                )
                 compositeDisposable.add(
                     djiPerformAction(FlightControllerKey.KeyStartGoHome)
                         .subscribeOn(Schedulers.newThread())
@@ -958,7 +1207,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                     sendMessage(
                         Statustext.builder()
                             .severity(MavSeverity.MAV_SEVERITY_ERROR)
-                            .text("PreArm: $check")
+                            .text(MavlinkTexts.truncateStatustext("PreArm: $check"))
                             .build()
                     )
                 }
@@ -1024,8 +1273,11 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
     private fun toMavlinkGlobalPositionIntMessage(): GlobalPositionInt? {
         val location = aircraftLocation ?: return null
-        val velocity = aircraftVelocity ?: return null
         val currentAttitude = attitude ?: return null
+        // The velocity key is not pushed on some aircraft and has no simulator state
+        // equivalent; without this fallback the message would never be sent and the
+        // GCS would see neither position nor altitude
+        val velocity = aircraftVelocity ?: Velocity3D()
 
         return GlobalPositionInt.builder()
             .timeBootMs(millisSinceBoot)
@@ -1064,10 +1316,14 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             }
         }
 
+        // Evaluate at build time so the prearm health bit tracks the current state
+        // (returns empty list, i.e. passed, when ARMING_CHECK is disabled)
+        val prearmChecksPassed = runPrearmChecks().isEmpty()
+
         return SysStatus.builder()
             .onboardControlSensorsPresent(HealthManager.AVAILABLE_SENSORS)
             .onboardControlSensorsEnabled(healthManager.enabledSensors)
-            .onboardControlSensorsHealth(healthManager.healthySensors)
+            .onboardControlSensorsHealth(healthManager.getHealthFlags(prearmChecksPassed))
             .voltageBattery(voltage)
             .currentBattery((current / 10.0f).roundToInt())
             .batteryRemaining(remaining)
@@ -1132,6 +1388,60 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             .build()
     }
 
+    private fun toMavlinkVfrHudMessage(): VfrHud {
+        // DJI exposes no motor output telemetry, so the throttle is synthesized from
+        // the flight state: GCS implementations use it to tell ground (0), armed idle
+        // (below the hover threshold) and flying (hover level) apart
+        val throttle = when {
+            !motorsOn -> 0
+            isFlying -> 50
+            else -> 5
+        }
+
+        val heading = attitude?.let { ((it.yaw % 360.0) + 360.0) % 360.0 } ?: 0.0
+        val groundSpeed = velocityHorizontalSpeed()
+        val climbRate = aircraftVelocity?.z?.toDouble() ?: 0.0
+
+        return VfrHud.builder()
+            .airspeed(groundSpeed.toFloat())
+            .groundspeed(groundSpeed.toFloat())
+            .heading(heading.roundToInt())
+            .throttle(throttle)
+            // DJI altitudes are relative to the takeoff location, no AMSL available
+            .alt(aircraftLocation?.altitude?.toFloat() ?: 0f)
+            .climb((-climbRate).toFloat())
+            .build()
+    }
+
+    private fun velocityHorizontalSpeed(): Double {
+        val velocity = aircraftVelocity ?: return 0.0
+        val x = velocity.x.toDouble()
+        val y = velocity.y.toDouble()
+        return sqrt(x * x + y * y)
+    }
+
+    private fun toMavlinkLocalPositionNedMessage(): LocalPositionNed? {
+        val location = aircraftLocation ?: return null
+        val home = rtlHomeLocation ?: return null
+        val velocity = aircraftVelocity
+
+        // DJI provides no local position, derive it from the GPS offset to the home
+        // location (local tangent plane, good enough for the short ranges of a drone)
+        val north = (location.latitude - home.latitude) * 111320.0
+        val east = (location.longitude - home.longitude) * 111320.0 *
+                cos(home.latitude.toRadians())
+
+        return LocalPositionNed.builder()
+            .timeBootMs(millisSinceBoot)
+            .x(north.toFloat())
+            .y(east.toFloat())
+            .z((-location.altitude).toFloat())
+            .vx((velocity?.x?.toDouble() ?: 0.0).toFloat())
+            .vy((velocity?.y?.toDouble() ?: 0.0).toFloat())
+            .vz((velocity?.z?.toDouble() ?: 0.0).toFloat())
+            .build()
+    }
+
     private fun toMavlinkHomePositionMessage(): HomePosition? {
         if (rtlHomeLocation == null) {
             return null
@@ -1158,7 +1468,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         }
 
         val location = aircraftLocation ?: return null
-        val velocity = aircraftVelocity ?: return null
+        val velocity = aircraftVelocity ?: Velocity3D()
 
         return GpsRawInt.builder()
             .timeUsec(BigInteger.valueOf(millisSinceBoot / 10))
@@ -1200,10 +1510,6 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     val isLocationAvailable: Boolean
         get() = aircraftLocation != null
 
-    fun setCustomSubMode(subMode: SUB_MODE) {
-        customSubMode = subMode
-    }
-
     //endregion
     //region: utils
     private fun toMavlinkVersion(djiVersion: String?): Long {
@@ -1222,5 +1528,17 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         val versionString = majorMinorPatch[0] + majorMinorPatch[1] + majorMinorPatch[2] + majorMinorPatch[3]
 
         return versionString.toLong()
+    }
+
+    companion object {
+        // SET_POSITION_TARGET_LOCAL_NED type mask bits 3-5 (velocity x/y/z ignored)
+        private const val VELOCITY_IGNORED_MASK = (1 shl 3) or (1 shl 4) or (1 shl 5)
+
+        // Landing confirmation watch window: 30 s in 500 ms steps
+        private const val LANDING_CONFIRMATION_POLL_COUNT = 60L
+
+        // StartTakeoff retry: 3 attempts, 500 ms apart, covers FC reconnection races
+        private const val TAKEOFF_RETRY_INTERVAL_MS = 500L
+        private const val TAKEOFF_RETRY_COUNT = 3
     }
 }

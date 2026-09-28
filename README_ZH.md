@@ -50,6 +50,8 @@ MavDrone/
 | 修改内容 | 涉及文件 |
 |---|---|
 | 支持地面站命令 `MAV_CMD_RUN_PREARM_CHECKS`：执行解锁前检查（GPS 定位、RTK 健康、Home 点、传感器健康、电池电量），逐条以 `PreArm: ` 开头的 `STATUSTEXT` 上报失败项，并返回接受或拒绝 | `communication/components/Drone.kt`、`communication/components/impl/HealthManager.kt` |
+| 支持地面站以 ArduPilot 风格切换 GUIDED 模式：`MAV_CMD_DO_SET_MODE` 携带主模式 4 且无 PX4 自动子模式时，与 PX4 OFFBOARD 一并映射为地面站受控状态（置 `MAV_MODE_FLAG_GUIDED_ENABLED`，回读为 OFFBOARD）；`MAV_CMD_NAV_TAKEOFF` 在 GUIDED 标志置位时同样放行 | `communication/components/Drone.kt` |
+| `MAV_CMD_NAV_TAKEOFF` 支持指定起飞高度：param7 高于 1.2 米时，DJI 自动起飞（固定约 1.2 米，固件最低值）完成后自动启用虚拟摇杆、垂直位置模式爬升到目标高度（相对起飞点），到位判定为容差 0.2 米且连续 3 个周期，带总超时保护，`COMMAND_CANCEL` 可中止爬升；param7 低于 1.2 米或未指定时按 1.2 米处理，即普通自动起飞。虚拟摇杆使用大疆官方 `dji.v5.manager.aircraft.virtualstick.VirtualStickManager` 封装（含控制权接管）与高级模式定高，直接用裸键不接管控制权时飞控会忽略摇杆数据 | `communication/components/Drone.kt`、新增 `communication/components/impl/VirtualStickManager.kt` |
 | 新增参数 `ARMING_CHECK`：解锁前检测的总开关（0 为关闭，1 为开启），数值持久化保存，并作为上述检测的生效条件 | `communication/components/impl/DroneParameters.kt`、`Drone.kt` |
 | 解锁命令 `MAV_CMD_COMPONENT_ARM_DISARM` 在执行前先运行解锁前检测：存在失败项时发送 `PreArm: ` 文本并拒绝解锁 | `communication/components/Drone.kt` |
 | 主界面固定为横屏，消除旋转屏幕导致的界面重建崩溃 | `app/src/main/AndroidManifest.xml` |
@@ -80,6 +82,19 @@ MavDrone/
 | 电池百分比键在部分机型上不推送，导致电池消息从未上报。修复：新增聚合键 `KeyBatteryOverviews` 作为备用数据源；百分比无效时按充电余量与满充容量换算；电池剩余量未知时显式发送 -1（协议未知标记）而非溢出值，并记录一次性警告日志 | `communication/components/Battery.kt` |
 | 多个遥测消息构建函数使用非空断言，数据尚未到达时会抛出异常且被静默吞掉。修复：数据缺失时返回空并跳过发送；周期发送器的异常改为记录日志，不再静默 | `communication/components/Drone.kt`、`MavBaseComponent.kt` |
 | 健康管理器新增未健康传感器查询接口，供解锁前检测使用 | `communication/components/impl/HealthManager.kt` |
+| `SYS_STATUS` 的 `onboard_control_sensors_health` 从未包含 `MAV_SYS_STATUS_PREARM_CHECK`（bit 28，0x10000000），依赖该位判断解锁前检查结果的地面站（等待该位置位）会一直阻塞到超时。修复：把该位加入 present/enabled 掩码，并按实时解锁前检测结果在 health 掩码中置位或清零（`ARMING_CHECK=0` 时视为通过） | `communication/components/Drone.kt`、`communication/components/impl/HealthManager.kt` |
+| 从未发送 `LOCAL_POSITION_NED`，MAVSDK 的 `position_velocity_ned` 订阅无数据，地面站的 ENU 位置（`pos_enu`）无法得到。修复：按 GPS 相对 Home 点偏移派生北/东坐标、高度取反为 NED z、速度取大疆速度键（无数据时为 0），以 10 Hz 发送 | `communication/components/Drone.kt` |
+| 新增 offboard 速度控制：处理 `SET_POSITION_TARGET_LOCAL_NED`（MAVSDK Offboard 的 `set_velocity_body`/`set_velocity_ned`/`set_position_velocity_ned` 都发这条消息，此前完全不生效），通过虚拟摇杆（速度模式）下发；首条设定点自动接管控制权，设定点断流 2 秒或落地自动归还。坐标系注意：实测 Mini 4 Pro 固件忽略 BODY 坐标请求、始终按 DJI 地面系（X=东、Y=北）解释水平速度，因此应用侧把机体系设定点自行旋转到地面系并显式请求 GROUND（NED 输入经两次旋转后恒等映射，与航向无关）；只消费速度分量，水平位置由地面站闭环控制（DJI 无水平位置模式） | `communication/components/Drone.kt`、`communication/components/impl/VirtualStickManager.kt` |
+| 长时间仿真飞行会被固件低电量智能返航打断（模拟器电池随仿真时间放电，剩余电量到达固件估算的"够回家"水平即自动返航，表现为飞一段时间后突然进入 GO_HOME）。修复：仿真开启时自动关闭固件低电量返航（`KeyLowBatteryRTHEnabled`），仿真停止后恢复默认开启；同时把固件的低电量警告、严重低电量、低电量返航触发状态以 `STATUSTEXT` 转发给地面站 | `communication/components/Drone.kt` |
+| 自动降落会在确认高度暂停、等待 DJI App 的"滑动确认降落"，地面站的降落流程被卡住；重复下发降落命令还会被固件以错误码 -7（`FLIGHTCONTROLLER.StartAutoLanding`，已在降落中）拒绝。修复：启动自动降落成功后监视 `KeyIsLandingConfirmationNeeded`（30 秒窗口），固件请求确认时自动调用 `KeyConfirmLanding`（等价于 App 里的滑动），降落全程无需人工介入 | `communication/components/Drone.kt` |
+| `STATUSTEXT` 按字符数截断导致中文被从 UTF-8 序列中间切断（MAVLink 字段上限是 50 字节），非法字节进入地面站的 nlohmann::json 序列化（`dump()` 严格校验）会直接把节点 abort 掉（`json.exception.type_error.316`）。修复：新增 `MavlinkTexts.truncateStatustext()`，按 50 字节边界截断且绝不切开 UTF-8 序列，所有含动态内容的 STATUSTEXT（PreArm 失败项、RTL 原因、虚拟摇杆状态，含 DJI 中文错误描述）统一走该函数 | `utils/MavlinkTexts.kt`（新增）、`communication/components/Drone.kt`、`communication/components/impl/VirtualStickManager.kt` |
+| App 重启或链路重建后立刻下发起飞命令，会撞上 `REQUEST_HANDLER_NOT_FOUND`（`FLIGHTCONTROLLER.StartTakeoff:-1`，FC 组件尚未重新上线）。修复：`KeyStartTakeoff` 增加短重试（3 次、间隔 500 毫秒），连接恢复瞬间到达的命令在连接就绪后自动成功；重试耗尽仍失败才返回命令失败 | `communication/components/Drone.kt` |
+| 新增下视/主相机图像 MJPEG 输出：服务启动时在 8090 端口起一个 HTTP 服务，`/` 返回 MJPEG 流（multipart/x-mixed-replace，15fps、JPEG 质量 60、缩放到 480×320 以内），`/snapshot` 返回单帧 JPEG（无帧时 503，便于区分 HTTP 问题与帧管线问题），供地面站拉流发布为 ROS topic；通过共享的 `ICameraStreamManager` 解码取帧（与 FPV 控件同源），注册不被不可靠的 `KeyConnection` 门控、失败自动重试，"listener already added" 视为复用残留监听器，并挂载离屏 Surface 保证无 App 界面时也持续解码。注意：Mini 4 Pro 的下视视觉传感器无 SDK 图像接口，此流来自主云台相机，需要下视画面时由地面站下发云台 pitch=-90° | `video/DownCamStreamer.kt`（新增）、`MavService.kt` |
+| `CameraFrameListener` 回调的五个整数参数实测顺序为 `(offset, size, width, height)`，与文档记载的 `(width, height, offset, stride)` 不符，按文档解释会把 1080p 标准帧误判为非法布局而全部跳帧。修复：按实测顺序取值并对照缓冲区大小自校验，不符时回退文档顺序；另移除离屏 `SurfaceTexture` 上非法的 `detachFromGLContext()` 调用（该对象不附着 GL 上下文，调用必然抛错导致监听注册整体失败） | `video/DownCamStreamer.kt` |
+| 从未发送 `VFR_HUD`，地面站读不到油门值（初始 -1，无法做落地/悬停判定）。DJI 不暴露电机输出遥测，油门按飞行状态合成：电机停转 0、已解锁未起飞 5、飞行中 50（悬停水平），另外顺带填充地速、航向、相对高度和爬升率，以 5 Hz 发送 | `communication/components/Drone.kt` |
+| 心跳 `custom_mode` 未按 PX4 打包格式编码（主模式在 bit16-23、自动子模式在 bit24-31），MAVSDK 按 PX4 解码导致回读的飞行模式永远是 Unknown。修复：心跳按 PX4 打包发送，并补全大疆飞行模式的标准主模式映射（P 模式/起飞就绪→POSCTL、ATTI→ALTCTL、自动起飞/降落/返航/跟随→AUTO+对应子模式）；子模式状态移入组件基类 | `communication/components/MavBaseComponent.kt`、`communication/components/Drone.kt` |
+| `MAV_CMD_DO_SET_MODE` 携带未知的自定义模式时原实现抛出异常且被静默吞掉，地面站收不到任何应答。修复：解析失败时返回命令失败 | `communication/components/Drone.kt` |
+| 仿真遥测两处修复：一、`SimulatorState` 的 positionX/Y/Z 是以起飞点为原点的北东地（NED）坐标系，Z 轴朝下，原实现直接把 `positionZ` 当高度使用，爬升时高度显示为负值，现取反后桥接；二、`GLOBAL_POSITION_INT` 与 `GPS_RAW_INT` 原先要求速度键有推送才发送，部分机型/仿真下速度键不推送导致这两条消息从未发出，地面站看不到位置与高度，现速度未知时回退为 0，保证消息始终发送 | `communication/components/Drone.kt` |
 | 电池组件的组件序号与低电量阈值改为外部可读，供解锁前检测使用 | `communication/components/Battery.kt` |
 
 ## 四、已知注意事项
@@ -90,7 +105,7 @@ MavDrone/
 
 3. **模拟器遥测在消费级机型上不完整。** 大疆官方模拟器主要面向行业机型（M300/M350 RTK、M30 系列、Mavic 3 行业系列）。本应用已迁移到官方 `SimulatorManager` 接口，但若状态回调仍不产出数据，说明该机型不支持模拟遥测。模拟器面板内 uxsdk 自带的 World-X 等遥测显示可能始终为空，请以地面站实际收到的数据为准。
 
-4. **本项目不发送 `LOCAL_POSITION_NED` 消息。** 仅发送 `GLOBAL_POSITION_INT`，地面站会自行派生本地位置；MAVSDK 的 `position_velocity_ned` 订阅因此不会有数据。
+4. **`LOCAL_POSITION_NED` 由 GPS 相对 Home 点的偏移派生。** DJI 不提供本地位置，本应用用飞机位置相对 Home 点的经纬度差换算北/东坐标（高度取反作为 NED 的 z，速度取自大疆速度键、无数据时为 0），以 10 Hz 发送 `LOCAL_POSITION_NED`，MAVSDK 的 `position_velocity_ned` 订阅因此有数据；其精度受 GPS 限制，不如真实 EKF 的本地定位平滑。
 
 5. **解锁前检测的电量门槛。** 拒绝解锁的条件是真实电量低于低电量报警阈值（大疆键 `KeyLowBatteryWarningThreshold`，应用兜底默认 20%），可通过参数 `BAT_LVL_WARN`（范围 15 至 50）调整；写入超出真机允许范围的值会被拒绝并回传当前值。解锁前检测只作用于 MAVLink 解锁路径，遥控器手动操作走大疆自身逻辑。
 
@@ -105,6 +120,7 @@ MavDrone/
    - `Battery data unavailable`：两个电池数据源均无数据；
    - `Received battery overview`：聚合电池键有数据；
    - `Prearm checks passed` / `Cannot arm drone, prearm checks failed`：解锁前检测结果；
+   - `Start virtual stick climb to ...` / `Climb height of ... reached` / `Climb to ... failed`：虚拟摇杆爬升过程；
    - `Cannot send message ...`：某条消息构建或发送异常。
 
 9. **工作区中的其他既有调整**（目标系统版本、MultiDex、地图组件地图样式等）不属于本文档记录范围。

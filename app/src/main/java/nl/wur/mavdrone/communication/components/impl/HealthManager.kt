@@ -111,6 +111,17 @@ class HealthManager(
         return ALL_SENSORS.filterIsInstance<MavSysStatusSensor>().filter { !healthySensors.flagsEnabled(it) }
     }
 
+    // GCS implementations (PX4-style) gate prearm checks on the MAV_SYS_STATUS_PREARM_CHECK
+    // bit (0x10000000) of SYS_STATUS.onboard_control_sensors_health, so it must reflect the
+    // live prearm result rather than only the DJI device health.
+    fun getHealthFlags(prearmCheckPassed: Boolean): EnumValue<MavSysStatusSensor?> {
+        val healthyValue = healthySensors.value()
+        val prearmBit = EnumValue.create(MavSysStatusSensor.MAV_SYS_STATUS_PREARM_CHECK).value()
+        return EnumValue.create(
+            if (prearmCheckPassed) healthyValue or prearmBit else healthyValue and prearmBit.inv()
+        )
+    }
+
     private fun updateEnabledSensors(t: Long) {
         // Check whether obstacle avoidance is enabled
         compositeDisposable.add(
@@ -169,7 +180,8 @@ class HealthManager(
             MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_RC_RECEIVER,
             MavSysStatusSensor.MAV_SYS_STATUS_GEOFENCE,
             MavSysStatusSensor.MAV_SYS_STATUS_SENSOR_BATTERY,
-            MavSysStatusSensor.MAV_SYS_STATUS_OBSTACLE_AVOIDANCE
+            MavSysStatusSensor.MAV_SYS_STATUS_OBSTACLE_AVOIDANCE,
+            MavSysStatusSensor.MAV_SYS_STATUS_PREARM_CHECK
         )
         val AVAILABLE_SENSORS: EnumValue<MavSysStatusSensor?> = listToEnum(ALL_SENSORS)
     }
