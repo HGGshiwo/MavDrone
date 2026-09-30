@@ -81,6 +81,7 @@ import nl.wur.mavdrone.communication.utils.EnumUtils
 import nl.wur.mavdrone.communication.utils.EnumUtils.Companion.enumToList
 import nl.wur.mavdrone.communication.utils.KMZ
 import nl.wur.mavdrone.communication.utils.KMZ.Companion.create
+import nl.wur.mavdrone.communication.utils.LocalPositionFilter
 import nl.wur.mavdrone.communication.utils.StandardResponses
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandAccepted
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandCanceled
@@ -160,6 +161,12 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
     private var overriddenKMZ: KMZ? = null
     private var overriddenWaypointId = 0
+
+    // Smooths the GPS-derived local position with the DJI fused velocity (per-axis
+    // Kalman); home-reset detection invalidates it because the north/east frame moves
+    private val localPositionFilter = LocalPositionFilter()
+    private var filterHomeLatitude = Double.NaN
+    private var filterHomeLongitude = Double.NaN
 
 
     init {
@@ -799,6 +806,13 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 }
 
                 else -> {
+                    // Gimbal commands are owned by the gimbal component. When they
+                    // arrive broadcast (targetComponent=0), answering with an
+                    // UNSUPPORTED ack races against the gimbal's ACCEPTED ack.
+                    if (payload.command().entry() in GIMBAL_OWNED_COMMANDS) {
+                        return false
+                    }
+
                     log.i("Unsupported command: " + payload.command().entry())
                     sendMessage(commandUnsupported(payload.command().entry(), msg.originSystemId, msg.originComponentId))
                     return false
@@ -1427,14 +1441,30 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
         // DJI provides no local position, derive it from the GPS offset to the home
         // location (local tangent plane, good enough for the short ranges of a drone)
-        val north = (location.latitude - home.latitude) * 111320.0
-        val east = (location.longitude - home.longitude) * 111320.0 *
+        val rawNorth = (location.latitude - home.latitude) * 111320.0
+        val rawEast = (location.longitude - home.longitude) * 111320.0 *
                 cos(home.latitude.toRadians())
+
+        // The home point defines the local frame origin; when it moves (e.g. the
+        // simulator re-anchors it) the filter state is invalid and must re-lock
+        if (home.latitude != filterHomeLatitude || home.longitude != filterHomeLongitude) {
+            filterHomeLatitude = home.latitude
+            filterHomeLongitude = home.longitude
+            localPositionFilter.reset(rawNorth, rawEast)
+        }
+
+        val hasVelocity = velocity != null
+        val filtered = localPositionFilter.update(
+            rawNorth, rawEast,
+            velocity?.x?.toDouble() ?: 0.0,
+            velocity?.y?.toDouble() ?: 0.0,
+            hasVelocity
+        )
 
         return LocalPositionNed.builder()
             .timeBootMs(millisSinceBoot)
-            .x(north.toFloat())
-            .y(east.toFloat())
+            .x(filtered.first.toFloat())
+            .y(filtered.second.toFloat())
             .z((-location.altitude).toFloat())
             .vx((velocity?.x?.toDouble() ?: 0.0).toFloat())
             .vy((velocity?.y?.toDouble() ?: 0.0).toFloat())
@@ -1540,5 +1570,13 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         // StartTakeoff retry: 3 attempts, 500 ms apart, covers FC reconnection races
         private const val TAKEOFF_RETRY_INTERVAL_MS = 500L
         private const val TAKEOFF_RETRY_COUNT = 3
+
+        // Commands handled by the gimbal component (Gimbal.kt); the autopilot
+        // must stay silent on them to avoid competing command acks
+        private val GIMBAL_OWNED_COMMANDS = setOf(
+            MavCmd.MAV_CMD_DO_GIMBAL_MANAGER_CONFIGURE,
+            MavCmd.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW,
+            MavCmd.MAV_CMD_DO_MOUNT_CONTROL
+        )
     }
 }

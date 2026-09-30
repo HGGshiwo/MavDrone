@@ -39,8 +39,8 @@ class DownCamStreamer(
     private val port: Int,
     private val fpsLimit: Int = 15,
     private val jpegQuality: Int = 60,
-    private val targetWidth: Int = 480,
-    private val targetHeight: Int = 320
+    private val targetWidth: Int = 640,
+    private val targetHeight: Int = 480
 ) {
     private val log = Logger("DownCamStreamer")
     private val running = AtomicBoolean(false)
@@ -243,29 +243,45 @@ class DownCamStreamer(
         }
     }
 
-    // NV21 -> Bitmap -> scale to the target size -> JPEG. Skips scaling when the frame
-    // already fits; decode/scale allocations are bounded by the fps limit.
+    // NV21 -> JPEG -> decode -> center-crop to the target aspect -> scale to
+    // the EXACT target size (640x480). The down-cam source is 16:9 (853x480)
+    // while consumers expect 4:3; center-cropping keeps pixel geometry
+    // undistorted (required for camera-intrinsics based perception) at the
+    // cost of a narrow horizontal field of view.
     private fun encodeJpeg(nv21: ByteArray, width: Int, height: Int): ByteArray? {
         val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
         val fullOut = ByteArrayOutputStream()
         yuv.compressToJpeg(Rect(0, 0, width, height), jpegQuality, fullOut)
         val fullJpeg = fullOut.toByteArray()
 
-        if (width <= targetWidth && height <= targetHeight) {
-            return fullJpeg
-        }
-
         val fullBitmap = BitmapFactory.decodeByteArray(fullJpeg, 0, fullJpeg.size)
             ?: return fullJpeg
 
-        val scale = maxOf(
-            targetWidth.toFloat() / width,
-            targetHeight.toFloat() / height
-        )
-        val scaledWidth = (width * scale).toInt().coerceAtLeast(2)
-        val scaledHeight = (height * scale).toInt().coerceAtLeast(2)
+        // Center-crop the source to the target aspect ratio
+        val srcAspect = width.toFloat() / height
+        val dstAspect = targetWidth.toFloat() / targetHeight
+        val cropW: Int
+        val cropH: Int
+        if (srcAspect > dstAspect) {
+            cropW = (height * dstAspect).toInt().coerceAtMost(width)
+            cropH = height
+        } else {
+            cropW = width
+            cropH = (width / dstAspect).toInt().coerceAtMost(height)
+        }
+        val cropX = (width - cropW) / 2
+        val cropY = (height - cropH) / 2
 
-        val smallBitmap = Bitmap.createScaledBitmap(fullBitmap, scaledWidth, scaledHeight, true)
+        val croppedBitmap =
+            Bitmap.createBitmap(fullBitmap, cropX, cropY, cropW, cropH)
+        val smallBitmap = if (cropW == targetWidth && cropH == targetHeight) {
+            croppedBitmap
+        } else {
+            val scaled =
+                Bitmap.createScaledBitmap(croppedBitmap, targetWidth, targetHeight, true)
+            croppedBitmap.recycle()
+            scaled
+        }
         val smallOut = ByteArrayOutputStream()
         smallBitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, smallOut)
 
