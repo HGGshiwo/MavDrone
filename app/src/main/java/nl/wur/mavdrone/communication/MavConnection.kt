@@ -54,13 +54,21 @@ class MavConnection(
     override fun run() {
         try {
             val hostAddress = getLocalWifiIpAddress(context) + ":" + connectionInformation.port
-            server = ServerSocket(connectionInformation.port)
+            server = ServerSocket()
+            server!!.reuseAddress = true
+            server!!.bind(java.net.InetSocketAddress(connectionInformation.port))
 
             while (!currentThread().isInterrupted) {
                 LOG.i("Waiting for connection")
 
                 mavlinkThreadCommunicationSubject.onNext(MavlinkServerRunning(true, hostAddress))
                 val socket = server!!.accept()
+
+                // 检测半开连接: 客户端异常死亡(休眠/断网)不会有 FIN/RST,
+                // 没有 SO_TIMEOUT 时下面的阻塞读会永远卡住, 新客户端
+                // 将再也无法被 accept。存活的 GCS 心跳为 1Hz, 不会触发超时
+                socket.tcpNoDelay = true
+                socket.soTimeout = 10_000
 
                 connectionAddress = socket.inetAddress.toString()
                 LOG.i("Trying to make a connection to $connectionAddress")
@@ -164,6 +172,10 @@ class MavConnection(
                     mavlinkIncomingMessagesObservable?.onComplete()
                 } catch (e: EOFException) {
                     LOG.w("Connection stream has ended!")
+                } catch (e: java.net.SocketTimeoutException) {
+                    // 读超时: 客户端 10s 内没有任何数据(心跳已停), 判定
+                    // 半开连接, 丢弃该会话回到 accept() 等待新客户端
+                    LOG.w("Connection read timed out, dropping stale client")
                 } catch (e: IOException) {
                     LOG.w("Cannot parse Mavlink message (IOException): ${e.message}")
                 }

@@ -71,6 +71,12 @@ import nl.wur.mavdrone.utils.RXUtils.Companion.djiPerformAction
 import nl.wur.mavdrone.utils.RXUtils.Companion.djiSetValue
 import nl.wur.mavdrone.utils.toRadians
 
+private val GIMBAL_OWNED_COMMANDS = setOf(
+    MavCmd.MAV_CMD_DO_GIMBAL_MANAGER_CONFIGURE,
+    MavCmd.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW,
+    MavCmd.MAV_CMD_DO_MOUNT_CONTROL
+)
+
 class Camera(
     connectionWR: WeakReference<MavConnection>, componentId: MavComponent,
     val componentIndex: ComponentIndexType, private val cameraLensType: CameraLensType,
@@ -574,6 +580,12 @@ class Camera(
                 }
 
                 else -> {
+                    // Broadcast gimbal commands belong to the gimbal component;
+                    // answering here would race against its ACCEPTED ack
+                    if (payload.command().entry() in GIMBAL_OWNED_COMMANDS) {
+                        return false
+                    }
+
                     log.i("Unsupported command: ${payload.command().entry()}")
                     sendMessage(commandUnsupported(payload.command().entry(), msg.originSystemId, msg.originComponentId))
                     return false

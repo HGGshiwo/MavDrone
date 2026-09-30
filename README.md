@@ -70,6 +70,12 @@ After enabling the MAVLink server, the drone exposes a server that accepts and p
 
 For a detailed list of implemented MAVLink messages/commands and known differences from default MAVLink/PX4 behavior, see [doc/MAVLINK_COMPATIBILITY.md](doc/MAVLINK_COMPATIBILITY.md).
 
+### Gimbal control (world-frame)
+`MAV_CMD_DO_MOUNT_CONFIGURE` selects `YAW_FOLLOW` for any mount mode: gimbal yaw follows the aircraft while pitch and roll are held in the earth frame. `MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW` sets an earth-frame pitch in a single command: the value is converted with the aircraft attitude at command arrival, clamped to the product's controllable range, and then held by the DJI stabilizer (expect the product's slew time, e.g. ~2-3 s per 90°). Body-relative gimbal following is intentionally not emulated — DJI stabilizers hold the world frame and a software emulation cannot be deterministic. On products that do not provide the gimbal attitude key, `GIMBAL_DEVICE_ATTITUDE_STATUS` is synthesized from the last commanded world angle.
+
+### Down-camera MJPEG stream
+The down/FPV camera is served as an MJPEG stream at `http://<controller-ip>:8090/stream` (path is ignored), 640x480 @ ~15 fps. The native 16:9 source (853x480) is center-cropped to an exact 4:3 frame without rescaling, so calibrate camera intrinsics for this geometry (a center crop only shifts `cx`). Consumers behind an HTTP proxy must bypass it for this LAN address (FFmpeg honours `http_proxy`), see `down_cam_node.py` in the ground-side project for an example.
+
 For an overview of the software architecture and module/class structure, see [doc/DESIGN_STRUCTURE.md](doc/DESIGN_STRUCTURE.md).
 
 ### Configure mavlink-router

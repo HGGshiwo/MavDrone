@@ -68,8 +68,9 @@ Scope:
 | `MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION` | Camera | Returns DJI RTSP stream info mapping. |
 | `MAV_CMD_REQUEST_VIDEO_STREAM_STATUS` | Camera | Returns DJI live-stream status mapping. |
 | `MAV_CMD_DO_GIMBAL_MANAGER_CONFIGURE` | Gimbal | Ownership/control model is app-managed per configured controller IDs. |
-| `MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW` | Gimbal | Mapped to DJI gimbal angle control with MAVLink flag translation constraints. |
+| `MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW` | Gimbal | World-frame one-shot: `param1` (pitch) is converted using the aircraft attitude at command arrival and executed once via DJI `RotateByAngle` (`ABSOLUTE_ANGLE`); the DJI stabilizer then holds the angle in the earth frame. Roll is left at level and yaw is left unchanged (earth frame) — they are not part of this command's emulation. Expect the gimbal slew time of the product (e.g. ~2-3 s per 90°). |
 | `MAV_CMD_DO_MOUNT_CONTROL` | Gimbal | Supported with MAVLink-targeting style mapping to DJI gimbal actions. |
+| `MAV_CMD_DO_MOUNT_CONFIGURE` | Gimbal | Final semantics: any recognized mount mode (`MAV_MOUNT_MODE_MAVLINK_TARGETING`, `RC_TARGETING`, `GPS_POINT`) maps to DJI `YAW_FOLLOW` — gimbal yaw follows the aircraft, pitch and roll are held in the earth frame by the stabilizer. Body-relative following is not emulated (DJI stabilizers hold world-frame; a software emulation cannot be deterministic). `param7` selects the gimbal device (0 = any). |
 
 ### Other implemented MAVLink control messages (non-command)
 
@@ -174,7 +175,7 @@ Mission-level conversion notes:
 | `GIMBAL_MANAGER_INFORMATION` | Gimbal component | Capability and limit fields are mapped from DJI gimbal model and static/product-specific data. |
 | `GIMBAL_MANAGER_STATUS` | Gimbal component | Control ownership/state follows app-managed gimbal manager control model. |
 | `GIMBAL_DEVICE_INFORMATION` | Gimbal component | Some device metadata/limits may be static or product-profile based. |
-| `GIMBAL_DEVICE_ATTITUDE_STATUS` | Gimbal component | Attitude/quaternion is translated from DJI attitude and yaw-reference handling. |
+| `GIMBAL_DEVICE_ATTITUDE_STATUS` | Gimbal component | Real DJI gimbal attitude only. Products without the attitude key do not broadcast this message (no synthesized fallback). |
 | `BATTERY_STATUS` | Battery components | Battery fields are aggregated/mapped from DJI battery keys (including multi-battery behavior). |
 | `SMART_BATTERY_INFO` | Battery components | Smart battery fields come from known battery profiles plus DJI key values. |
 | `RC_CHANNELS` | Remote controller integration | Channel values are scaled from DJI controller ranges to MAVLink RC range conventions. |

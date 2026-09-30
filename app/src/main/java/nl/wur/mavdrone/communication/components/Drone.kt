@@ -81,6 +81,7 @@ import nl.wur.mavdrone.communication.utils.EnumUtils
 import nl.wur.mavdrone.communication.utils.EnumUtils.Companion.enumToList
 import nl.wur.mavdrone.communication.utils.KMZ
 import nl.wur.mavdrone.communication.utils.KMZ.Companion.create
+import nl.wur.mavdrone.communication.utils.LocalPositionFilter
 import nl.wur.mavdrone.communication.utils.StandardResponses
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandAccepted
 import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandCanceled
@@ -161,6 +162,12 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     private var overriddenKMZ: KMZ? = null
     private var overriddenWaypointId = 0
 
+    // Smooths the GPS-derived local position with the DJI fused velocity (per-axis
+    // Kalman); home-reset detection invalidates it because the north/east frame moves
+    private val localPositionFilter = LocalPositionFilter()
+    private var filterHomeLatitude = Double.NaN
+    private var filterHomeLongitude = Double.NaN
+
 
     init {
         addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED)
@@ -225,6 +232,8 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         motorsOn = false
         rtlHomeHeight = 50
         isFlying = false
+
+        watchLandingConfirmation()
 
         compositeDisposable.add(djiGetValue(ProductKey.KeyProductType).subscribe { p: ProductType -> productType = p })
 
@@ -720,7 +729,6 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                                 .subscribe(
                                     {
                                         sendMessage(commandAccepted(payload.command().entry(), msg.originSystemId, msg.originComponentId))
-                                        watchLandingConfirmation()
                                     },
                                     { error ->
                                         onError(
@@ -799,6 +807,13 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 }
 
                 else -> {
+                    // Gimbal commands are owned by the gimbal component. When they
+                    // arrive broadcast (targetComponent=0), answering with an
+                    // UNSUPPORTED ack races against the gimbal's ACCEPTED ack.
+                    if (payload.command().entry() in GIMBAL_OWNED_COMMANDS) {
+                        return false
+                    }
+
                     log.i("Unsupported command: " + payload.command().entry())
                     sendMessage(commandUnsupported(payload.command().entry(), msg.originSystemId, msg.originComponentId))
                     return false
@@ -912,30 +927,22 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             Schedulers.newThread()
         )
 
-    // The firmware pauses auto landing at the confirmation height and waits for the
-    // DJI app "slide to confirm landing"; confirm via the SDK instead so GCS-initiated
-    // landings complete without manual interaction
+    // 落地保护: 固件在下视系统检测到地面 (~0.5-1 m, 机型相关) 时会暂停
+    // 下降并请求"滑动确认降落"——auto-land 和虚拟摇杆速度下降都会触发,
+    // 保护高度以下下降指令会被固件忽略。常驻监视并自动确认, 放行到地面
     private fun watchLandingConfirmation() {
         compositeDisposable.add(
             Observable.interval(500, TimeUnit.MILLISECONDS)
-                .take(LANDING_CONFIRMATION_POLL_COUNT)
                 .flatMapSingle { djiGetValue(FlightControllerKey.KeyIsLandingConfirmationNeeded) }
+                .distinctUntilChanged()
                 .filter { it }
-                .firstOrError()
                 .flatMapCompletable {
                     log.i("Landing confirmation needed, confirming automatically")
                     djiPerformAction(FlightControllerKey.KeyConfirmLanding)
                 }
                 .subscribe(
-                    { log.i("Landing confirmation done") },
-                    { error ->
-                        if (error is NoSuchElementException) {
-                            // No confirmation request within the watch window
-                            log.i("No landing confirmation was requested")
-                        } else {
-                            RXUtils.handleError(error)
-                        }
-                    }
+                    {},
+                    { error -> RXUtils.handleError(error) }
                 )
         )
     }
@@ -1427,14 +1434,30 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
         // DJI provides no local position, derive it from the GPS offset to the home
         // location (local tangent plane, good enough for the short ranges of a drone)
-        val north = (location.latitude - home.latitude) * 111320.0
-        val east = (location.longitude - home.longitude) * 111320.0 *
+        val rawNorth = (location.latitude - home.latitude) * 111320.0
+        val rawEast = (location.longitude - home.longitude) * 111320.0 *
                 cos(home.latitude.toRadians())
+
+        // The home point defines the local frame origin; when it moves (e.g. the
+        // simulator re-anchors it) the filter state is invalid and must re-lock
+        if (home.latitude != filterHomeLatitude || home.longitude != filterHomeLongitude) {
+            filterHomeLatitude = home.latitude
+            filterHomeLongitude = home.longitude
+            localPositionFilter.reset(rawNorth, rawEast)
+        }
+
+        val hasVelocity = velocity != null
+        val filtered = localPositionFilter.update(
+            rawNorth, rawEast,
+            velocity?.x?.toDouble() ?: 0.0,
+            velocity?.y?.toDouble() ?: 0.0,
+            hasVelocity
+        )
 
         return LocalPositionNed.builder()
             .timeBootMs(millisSinceBoot)
-            .x(north.toFloat())
-            .y(east.toFloat())
+            .x(filtered.first.toFloat())
+            .y(filtered.second.toFloat())
             .z((-location.altitude).toFloat())
             .vx((velocity?.x?.toDouble() ?: 0.0).toFloat())
             .vy((velocity?.y?.toDouble() ?: 0.0).toFloat())
@@ -1534,11 +1557,16 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         // SET_POSITION_TARGET_LOCAL_NED type mask bits 3-5 (velocity x/y/z ignored)
         private const val VELOCITY_IGNORED_MASK = (1 shl 3) or (1 shl 4) or (1 shl 5)
 
-        // Landing confirmation watch window: 30 s in 500 ms steps
-        private const val LANDING_CONFIRMATION_POLL_COUNT = 60L
-
         // StartTakeoff retry: 3 attempts, 500 ms apart, covers FC reconnection races
         private const val TAKEOFF_RETRY_INTERVAL_MS = 500L
         private const val TAKEOFF_RETRY_COUNT = 3
+
+        // Commands handled by the gimbal component (Gimbal.kt); the autopilot
+        // must stay silent on them to avoid competing command acks
+        private val GIMBAL_OWNED_COMMANDS = setOf(
+            MavCmd.MAV_CMD_DO_GIMBAL_MANAGER_CONFIGURE,
+            MavCmd.MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW,
+            MavCmd.MAV_CMD_DO_MOUNT_CONTROL
+        )
     }
 }

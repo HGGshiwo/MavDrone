@@ -4,6 +4,7 @@ import java.lang.ref.WeakReference
 import java.math.BigInteger
 import kotlin.math.roundToInt
 
+import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.GimbalKey
 import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.value.common.Attitude
@@ -46,6 +47,7 @@ import nl.wur.mavdrone.communication.utils.StandardResponses.Companion.commandUn
 import nl.wur.mavdrone.utils.Quaternion.Companion.fromEulerDegrees
 import nl.wur.mavdrone.utils.Quaternion.Companion.fromList
 import nl.wur.mavdrone.utils.RXUtils
+import nl.wur.mavdrone.utils.RXUtils.Companion.djiSetValue
 import nl.wur.mavdrone.utils.RXUtils.Companion.djiPerformAction
 import nl.wur.mavdrone.utils.toDegrees
 import nl.wur.mavdrone.utils.toRadians
@@ -69,6 +71,9 @@ class Gimbal(connectionWR: WeakReference<MavConnection>, componentId: MavCompone
 
     private val gimbalDeviceId = COMPONENT_TO_GIMBAL_ID[componentId] ?: -1
     private var gimbalMode: GimbalMode? = null
+    private var gimbalAttitudeFallbackTs = 0L
+    private var warnedNoGimbalAttitude = false
+    private var loggedPolledAttitude = false
     private var gimbalAttitude: Attitude? = null
     var gimbalYawAircraftHeading = 0.0
 
@@ -230,9 +235,19 @@ class Gimbal(connectionWR: WeakReference<MavConnection>, componentId: MavCompone
                             yaw = (yaw - gimbalYawAircraftHeading).toFloat()
                         }
 
+                        // 世界系绝对角 (param1 = 相对大地的 pitch, DJI 符号
+                        // 负值向下)。ABSOLUTE_ANGLE 的 0 度参考是指令时刻
+                        // 的机体姿态, 换算成机体相对指令后一次性执行;
+                        // DJI 稳定器随后按世界系保持, 无需后续指令。
+                        // 换算后必须按机体可控范围 clamp (飞机抬头时世界
+                        // 目标会越界), 保证最接近目标的可达角度, 不被拒收
+                        val pitchNow = aircraftPitchDji()
+                        val pitchBody = (pitch.toDouble() - pitchNow)
+                            .coerceIn(BODY_PITCH_MIN, BODY_PITCH_MAX)
+
                         compositeDisposable.add(setGimbalAngle(
                                 Float.NaN.toDouble(),
-                                pitch.toDouble(),
+                                pitchBody,
                                 yaw.toDouble()
                             )
                                 .subscribe(
@@ -267,6 +282,67 @@ class Gimbal(connectionWR: WeakReference<MavConnection>, componentId: MavCompone
                         )
                     )
 
+                    return true
+                }
+
+                MavCmd.MAV_CMD_DO_MOUNT_CONFIGURE -> {
+                    if (payload.param7().roundToInt() == gimbalDeviceId || payload.param7().roundToInt() == 0) {
+                        val mountMode = EnumValue.create(MavMountMode::class.java, payload.param4().roundToInt()).entry()
+
+                        // 定稿语义: 所有 mount mode 一律映射 DJI YAW_FOLLOW
+                        // (yaw 随机体; pitch/roll 按世界系稳定)。pitch 指令为
+                        // 一次性世界角, 机体相对跟随不做模拟
+                        val gimbalMode = when (mountMode) {
+                            MavMountMode.MAV_MOUNT_MODE_MAVLINK_TARGETING,
+                            MavMountMode.MAV_MOUNT_MODE_RC_TARGETING,
+                            MavMountMode.MAV_MOUNT_MODE_GPS_POINT -> GimbalMode.YAW_FOLLOW
+                            else -> null
+                        }
+
+                        if (gimbalMode == null) {
+                            log.w("Unsupported mount mode: $mountMode")
+                            sendMessage(
+                                commandFailed(
+                                    MavCmd.MAV_CMD_DO_MOUNT_CONFIGURE,
+                                    msg.originSystemId,
+                                    msg.originComponentId
+                                )
+                            )
+                            return true
+                        }
+
+                        compositeDisposable.add(setGimbalMode(gimbalMode)
+                            .subscribe(
+                                {
+                                    log.i("Set gimbal mode to $gimbalMode")
+                                    sendMessage(
+                                        commandAccepted(
+                                            MavCmd.MAV_CMD_DO_MOUNT_CONFIGURE,
+                                            msg.originSystemId,
+                                            msg.originComponentId
+                                        )
+                                    )
+                                },
+                                { error ->
+                                    onError(
+                                        error,
+                                        StandardResponses::commandFailed,
+                                        MavCmd.MAV_CMD_DO_MOUNT_CONFIGURE,
+                                        msg.originSystemId,
+                                        msg.originComponentId
+                                    )
+                                })
+                        )
+                        return true
+                    }
+
+                    sendMessage(
+                        commandFailed(
+                            MavCmd.MAV_CMD_DO_MOUNT_CONFIGURE,
+                            msg.originSystemId,
+                            msg.originComponentId
+                        )
+                    )
                     return true
                 }
 
@@ -459,28 +535,58 @@ class Gimbal(connectionWR: WeakReference<MavConnection>, componentId: MavCompone
     }
 
     private fun toGimbalDeviceAttitudeStatus(): GimbalDeviceAttitudeStatus? {
-        gimbalAttitude?.let { attitude ->
-            val quaternion = fromEulerDegrees(
-                attitude.roll,
-                attitude.pitch,
-                gimbalYawAircraftHeading
-            )
-
-            return GimbalDeviceAttitudeStatus.builder()
-                .timeBootMs(millisSinceBoot)
-                .flags(GimbalDeviceFlags.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME)
-                .q(quaternion.toList())
-                .angularVelocityX(Float.NaN)
-                .angularVelocityY(Float.NaN)
-                .angularVelocityZ(Float.NaN)
-                .failureFlags()
-                .deltaYaw(Float.NaN)
-                .deltaYawVelocity(Float.NaN)
-                .gimbalDeviceId(gimbalDeviceId)
-                .build()
+        var attitude = gimbalAttitude
+        if (attitude == null) {
+            // Some gimbals never push the attitude listener; poll the key instead
+            val now = System.currentTimeMillis()
+            if (now - gimbalAttitudeFallbackTs > 500) {
+                gimbalAttitudeFallbackTs = now
+                attitude = KeyManager.getInstance()
+                    .getValue(KeyTools.createKey(GimbalKey.KeyGimbalAttitude, componentIndex))
+                if (attitude != null && !loggedPolledAttitude) {
+                    loggedPolledAttitude = true
+                    log.i("Gimbal attitude recovered via key polling: pitch=${attitude.pitch}")
+                }
+            }
         }
 
-        return null
+        if (attitude == null) {
+            if (!warnedNoGimbalAttitude) {
+                warnedNoGimbalAttitude = true
+                log.w("Gimbal attitude unavailable on this gimbal; GIMBAL_DEVICE_ATTITUDE_STATUS will not be sent")
+            }
+            return null
+        }
+
+        val quaternion = fromEulerDegrees(
+            attitude.roll,
+            attitude.pitch,
+            gimbalYawAircraftHeading
+        )
+
+        return GimbalDeviceAttitudeStatus.builder()
+            .timeBootMs(millisSinceBoot)
+            .flags(GimbalDeviceFlags.GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME)
+            .q(quaternion.toList())
+            .angularVelocityX(Float.NaN)
+            .angularVelocityY(Float.NaN)
+            .angularVelocityZ(Float.NaN)
+            .failureFlags()
+            .deltaYaw(Float.NaN)
+            .deltaYawVelocity(Float.NaN)
+            .gimbalDeviceId(gimbalDeviceId)
+            .build()
+    }
+
+    fun setGimbalMode(mode: GimbalMode): Completable {
+        return djiSetValue(KeyTools.createKey(GimbalKey.KeyGimbalMode, componentIndex), mode)
+    }
+
+    // 飞机 pitch, 换算到 DJI 云台符号约定 (负值向下)
+    private fun aircraftPitchDji(): Double {
+        val attitude = KeyManager.getInstance()
+            .getValue(KeyTools.createKey(FlightControllerKey.KeyAircraftAttitude))
+        return -(attitude?.pitch ?: 0.0)
     }
 
     fun setGimbalAngle(roll: Double, pitch: Double, yaw: Double): Completable {
@@ -525,7 +631,10 @@ class Gimbal(connectionWR: WeakReference<MavConnection>, componentId: MavCompone
     }
 
     fun down() : Completable {
-        return djiPerformAction(KeyTools.createKey(GimbalKey.KeyGimbalReset, componentIndex), GimbalResetType.PITCH_UP_OR_DOWN_WITH_YAW_CENTER)
+        // NEUTRAL 语义。注意: 产品能力文件 (GimbalReset.json) 显示仅
+        // SELFIE(1)/PITCH_YAW(2) 受支持, PITCH_UP_OR_DOWN_WITH_YAW_CENTER
+        // 在部分机型上会被拒收, 故用 PITCH_YAW 回中近似
+        return djiPerformAction(KeyTools.createKey(GimbalKey.KeyGimbalReset, componentIndex), GimbalResetType.PITCH_YAW)
     }
 
     companion object {
@@ -563,6 +672,13 @@ class Gimbal(connectionWR: WeakReference<MavConnection>, componentId: MavCompone
                 GimbalDeviceCapFlags.GIMBAL_DEVICE_CAP_FLAGS_HAS_YAW_LOCK
             )
         )
+
+        // 机体相对 pitch 可控范围的公共安全边界 (当前机队最浅的机型,
+        // 如 Mini 4 Pro 为 -90~+35)。世界系目标经姿态换算后 clamp 到
+        // 此范围, 保证指令永不越界。TODO: 从 SDK KeyParamRange 读取
+        // 各机型真实限位
+        const val BODY_PITCH_MIN = -90.0
+        const val BODY_PITCH_MAX = 35.0
     }
 }
 
