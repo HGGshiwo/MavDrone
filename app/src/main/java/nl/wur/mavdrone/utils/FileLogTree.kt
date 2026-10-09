@@ -6,7 +6,6 @@ import android.util.Log
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.schedulers.Schedulers
 import io.reactivex.rxjava3.subjects.PublishSubject
-import nl.wur.mavdrone.communication.utils.FileUtils.Companion.getExternalCacheDirPath
 import timber.log.Timber
 import java.io.File
 import java.text.SimpleDateFormat
@@ -15,17 +14,17 @@ import java.util.Locale
 import java.util.logging.Logger
 
 @SuppressLint("LogNotTimber")
-class FileLogTree(var context: Context?) : Timber.Tree() {
+class FileLogTree(private val context: Context) : Timber.Tree() {
     private val compositeDisposable = CompositeDisposable()
     private val writeQueue = PublishSubject.create<String>()
 
-    private val logfile: File? by lazy { context?.let { generateFile(it) } }
+    private val logfile: File by lazy { generateFile(context) }
 
     init {
         compositeDisposable.add(writeQueue
             .observeOn(Schedulers.io())
             .doOnNext { logMessage ->
-                logfile?.appendText(logMessage)
+                logfile.appendText(logMessage)
             }
             .doOnError { error -> Log.e(TAG, "Could not write to log file: $error") }
             .onErrorComplete()
@@ -51,10 +50,15 @@ class FileLogTree(var context: Context?) : Timber.Tree() {
         const val TAG = "MavFileLogging"
 
         private fun generateFile(context: Context): File {
-            val logFolder = getExternalCacheDirPath(context, "MavlinkLogs")
-            val logFolderFile = File(logFolder)
+            // 写到外部 files 目录 (Android/data/<pkg>/files/MavlinkLogs):
+            // Android 11+ 的作用域存储拒绝 adb/run-as 访问 cache/, 而 files/
+            // 可直接 `adb shell cat` 读取, 便于拉取历史日志
+            val externalFilesDir: java.io.File? = context.getExternalFilesDir(null)
+            val baseDir: java.io.File = externalFilesDir
+                ?: java.io.File(context.cacheDir, "MavlinkLogs")
+            val logFolder: java.io.File = java.io.File(baseDir, "MavlinkLogs")
 
-            if (!logFolderFile.exists() && !logFolderFile.mkdir()) {
+            if (!logFolder.exists() && !logFolder.mkdir()) {
                 Logger.getGlobal().warning("Cannot create save folder for log files!")
             }
 

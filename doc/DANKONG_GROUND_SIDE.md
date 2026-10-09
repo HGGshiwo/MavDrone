@@ -1,7 +1,7 @@
 # dankong 地面站接入说明（WSL）
 
 [dankong](https://github.com/HGGshiwo) 是本项目的地面站/机载计算机侧工程
-（ROS1 Noetic，运行于 WSL Ubuntu-20.04），负责：MAVSDK→MAVLink 的飞行控制、
+（ROS1 Noetic，运行于 WSL Ubuntu-20.04），负责：MAVSDK/MAVLink 的飞行控制、
 精准降落（pland）、下视相机拉流（`down_cam_node.py`）、以及把 rsos 云台服务
 桥接到本 App 的 MAVLink 云台接口（`GimbalBridge`）。
 
@@ -26,39 +26,72 @@
 
 | 链路 | 地址 | 方向 |
 |---|---|---|
-| MAVLink 控制 | `tcp://<controller-ip>:5760`（dankong `mavsdk_url` 配置） | dankong MAVSDK → 本 App |
+| MAVLink 控制 | `tcp://<controller-ip>:5760`（dankong `mavsdk_url` 配置） | dankong MAVSDK/MAVLink → 本 App |
 | 下视相机流 | `http://<controller-ip>:8090/stream`，MJPEG 640×480 @ ~15 fps | 本 App → dankong `down_cam_node.py` |
 | 云台 | rsos service `/UAV0/sensor/serial_gimbal/set_gimbal_angle` | dankong `GimbalBridge` → 本 App 云台组件（compid 154） |
+| 透传指令 | `/mavros/cmd/command`（`mavros_msgs/CommandLong` 原样转发） | dankong `MavrosBridge` → 本 App |
 
-## 3. 云台
+## 3. 云台（语义在本 App 侧实现）
 
-云台语义全部在本 App 侧实现（见 [MAVLINK_COMPATIBILITY.md](MAVLINK_COMPATIBILITY.md)）：
-`DO_MOUNT_CONFIGURE` 任意模式映射 `YAW_FOLLOW`（yaw 随机体，pitch/roll 世界系），
-`DO_GIMBAL_MANAGER_PITCHYAW` 为一次性世界系 pitch（按指令时刻飞机姿态换算，
-按机体可控范围 clamp，Mini 4 Pro 约 -90°~+35°；转速为硬件上限，约 2-3 s/90°）。
+`DO_MOUNT_CONFIGURE` 任意 mount mode 一律映射 DJI `YAW_FOLLOW`：
 
-`GimbalBridge` 侧约定：
+| 轴 | 参考系 | 行为 |
+|---|---|---|
+| yaw | 机体 | 跟随机头 |
+| pitch | **世界系** | 一次性指令（按指令时刻飞机姿态换算 + 机体限位钳制，Mini 4 Pro 约 -90°~+35°），固件稳定器保持 |
+| roll | 世界系 | 保持水平 |
 
-- rsos `angle` 正值向下（90 = 垂直向下），桥接层转换为 DJI 负值向下符号；
-- `body` / `abs` 均接受且行为一致（接口兼容保留，机体相对跟随不做模拟）；
-- 开关 `gimbal_bridge_enable: true`（`dji-config.yaml`）；串口云台机型保持
-  false，service 由各自驱动节点提供；
+- `body` / `abs` 均接受且**行为一致**（接口兼容保留）；机体相对跟随不做模拟
+  （DJI 稳定器按世界系保持，软件模拟无法做到确定性）。
+- 转速为硬件上限（约 2-3 s / 90°），调用方需等云台到位。
 - 本产品不提供 `KeyGimbalAttitude`，因此**没有云台姿态回读**
   （不广播 `GIMBAL_DEVICE_ATTITUDE_STATUS`）；pland 需要云台角时使用
   "已知指令角"模型（`pland_gimbal_abs=true`，世界系语义与本行为一致）。
 
-## 4. 下视相机
+## 4. 强制停桨（移动物体降落）
 
-- 源流 16:9（853×480），App **居中裁切**为 640×480（左右各裁 ~107 px，1:1
-  像素无缩放无变形）。
-- `camera_inner_matrix` 按裁切后图像标定：居中裁切只平移 `cx`
-  （853 宽几何中心 426.5 → 320.5），`fx/fy` 沿用源相机。
-- dankong 侧 `down_cam_node.py` 已内置两个规避：清除代理环境变量（FFmpeg
-  会读 `http_proxy`，代理不在机载网段会导致打不开流）；手工填充
-  `sensor_msgs/Image`（Noetic cv_bridge 与新版 numpy/OpenCV 组合存在
-  `KeyError: 16` 兼容性问题）。
+`MAV_CMD_COMPONENT_ARM_DISARM`（400）：
 
-## 5. 注入点同步（重要）
+- `param1=1`：武装（仅置 MAVLink 状态标志，电机实际启动由 takeoff/虚拟摇杆完成）；
+- `param1=0, param2≠21196`：普通 disarm——**飞行中会被拒绝**（安全设计）；
+- `param1=0, param2=21196`：**强制停桨**（MAVLink 强制魔数，QGC Kill 按钮同款）
+  → DJI `KeyLockMotors = true`，电机立即停转，用于移动物体降落的接触切断。
+
+适用场景与限制：用于降落到移动平台在接触/近接触瞬间切断动力。实测一次在
+约 1 m 高度触发后电机未停（Mini 4 Pro 固件疑似对普通飞行状态下的停桨触发
+有门控，参见 `KeyCanTriggerStopMotorInShipTakeOffMode` 能力位与
+`DJIFlightAssistantKey` 的 `FlyingOnShip`（船上起降）key 组），待复测确认；
+触地后的最终停桨由固件落地自动停桨兜底。
+
+## 5. 降落与落地保护
+
+- 普通降落（dankong `robot->land()` = DJI auto-land）：固件自动下压云台。
+- pland 精准降落（Offboard）：固件不管云台，由 `SetGimbalEvent(90)` 下压。
+- **落地保护（实测确认）**：下降到离地约 0.5-1 m 时固件暂停下降并请求
+  "滑动确认降落"，此高度以下所有下降指令（含虚拟摇杆）被忽略。本 App
+  **常驻**监视 `KeyIsLandingConfirmationNeeded`（不限 auto-land 场景）并
+  自动 `KeyConfirmLanding`，确认后下降继续。App logcat 关键字：
+  `Landing confirmation needed`。
+- **低空模式切换（实测确认）**：pland 流程在低空会主动切
+  `GUIDED → LAND`（`pland_controller` 的 BLIND_DROP 或 `LandState` 判定），
+  之后固件接管下降、offboard 速度指令不再生效——这是固件模式语义，不是
+  故障；接触瞬间的切断由第 4 节的强制停桨完成。
+
+## 6. 调试与日志
+
+| 日志 | 位置 | 读取方式 |
+|---|---|---|
+| App 会话日志（全部 `Mav` tag） | `/sdcard/Android/data/nl.wur.mavdrone/files/MavlinkLogs/<启动时间>.txt` | `adb shell cat <文件>`（files 目录 adb 可直读） |
+| logcat 环形缓冲 | 设备内存 | `adb logcat -d -v time`（App 重启不清，**装 APK 会重置**——先抓 logcat 再装） |
+| DJI SDK 内部日志 | `files/LOG/...` | **加密**，不可读 |
+
+版本确认：`adb shell dumpsys package nl.wur.mavdrone | grep versionName`，
+格式为 `1.0-<MMdd_HHMM>`（构建时间戳，分钟级），一眼可辨新旧。
+
+排查顺序建议：复现问题 → `adb logcat -d` 抓现场 → 测试结束后
+`adb shell cat` 拉会话文件。不要在抓取 logcat 之前安装 APK。
+
+## 7. 注入点同步（重要）
 
 `camera_inner_matrix` 与图像话题有**两处注入点**，修改标定/话题时必须同步：
 
@@ -66,12 +99,3 @@
 |---|---|
 | `config/dji-config.yaml`（`camera_inner_matrix`、`pland_image_topic`） | dankong 内部 `LandingDetector`（Web 接口 `/start_pland_detect`、`/offset_estimate/start` 触发） |
 | `launch/dankong.launch` → `pland_detector.launch`（`camera_inner_matrix`、`image_topic`） | 外部 pland_detector 节点（精准降落主流程） |
-
-## 6. 降落与落地保护
-
-- 普通降落（dankong `robot->land()` = DJI auto-land）：固件自动下压云台。
-- pland 精准降落（Offboard）：固件不管云台，由 `SetGimbalEvent(90)` 下压。
-- **落地保护**：下降到离地约 0.5-1 m 时固件暂停下降并请求"滑动确认降落"，
-  此高度以下所有下降指令（含虚拟摇杆）被忽略。本 App 常驻监视
-  `KeyIsLandingConfirmationNeeded` 并自动 `KeyConfirmLanding`，确认后下降
-  继续。App logcat 关键字：`Landing confirmation needed`。

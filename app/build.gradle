@@ -14,7 +14,9 @@ android {
         minSdkVersion Integer.parseInt(project.ANDROID_MIN_SDK_VERSION)
         targetSdkVersion Integer.parseInt(project.ANDROID_TARGET_SDK_VERSION)
         versionCode 1
-        versionName "1.0"
+        // 构建时间戳作为版本名: 遥控器上可直接确认安装的是哪次构建
+        def buildTime = new Date().format("MMdd_HHmm")
+        versionName "1.0-" + buildTime
 
         multiDexEnabled true
 
