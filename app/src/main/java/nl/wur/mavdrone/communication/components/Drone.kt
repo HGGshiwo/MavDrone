@@ -4,6 +4,7 @@ import java.lang.ref.WeakReference
 import java.math.BigInteger
 import java.util.concurrent.TimeUnit
 
+import dji.sdk.keyvalue.key.DJIFlightControllerKey
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.key.ProductKey
@@ -499,7 +500,13 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
                 MavCmd.MAV_CMD_COMPONENT_ARM_DISARM -> {
                     if (payload.param1().roundToInt() == 0) {
-                        cmdDisarmMotors(msg.originSystemId, msg.originComponentId)
+                        // MAVLink 强制停桨约定: param2 = 21196 允许空中停桨
+                        // (移动平台降落场景), 映射 DJI KeyLockMotors
+                        cmdDisarmMotors(
+                            msg.originSystemId,
+                            msg.originComponentId,
+                            payload.param2().roundToInt() == 21196
+                        )
                     } else {
                         cmdArmMotors(msg.originSystemId, msg.originComponentId)
                     }
@@ -1237,16 +1244,36 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         armingTime = System.currentTimeMillis() * 1000
     }
 
-    private fun cmdDisarmMotors(systemId: Int, componentId: Int) {
-        if (isFlying) {
+    private fun cmdDisarmMotors(systemId: Int, componentId: Int, force: Boolean = false) {
+        if (isFlying && !force) {
             log.w("Cannot disarm drone because it's still flying!")
             sendMessage(commandDenied(MavCmd.MAV_CMD_COMPONENT_ARM_DISARM, systemId, componentId))
             return
         }
 
-        if (!containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)) {
+        if (!force && !containsMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)) {
             log.w("Cannot disarm drone because it's not armed!")
             sendMessage(commandFailed(MavCmd.MAV_CMD_COMPONENT_ARM_DISARM, systemId, componentId))
+            return
+        }
+
+        if (isFlying && force) {
+            // 空中强制停桨 (移动平台降落): DJI KeyLockMotors = true, 电机
+            // 立即停转。危险操作, 仅 force disarm (param2=21196) 触发
+            log.w("FORCE DISARM in flight (emergency motor lock)!")
+            compositeDisposable.add(
+                djiSetValue(KeyTools.createKey(DJIFlightControllerKey.KeyLockMotors), true)
+                    .subscribe(
+                        {
+                            removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)
+                            sendMessage(commandAccepted(MavCmd.MAV_CMD_COMPONENT_ARM_DISARM, systemId, componentId))
+                        },
+                        { error ->
+                            log.e("Force motor lock failed: $error")
+                            sendMessage(commandFailed(MavCmd.MAV_CMD_COMPONENT_ARM_DISARM, systemId, componentId))
+                        }
+                    )
+            )
             return
         }
 
