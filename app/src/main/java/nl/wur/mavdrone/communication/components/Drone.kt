@@ -34,6 +34,7 @@ import io.dronefleet.mavlink.common.CommandCancel
 import io.dronefleet.mavlink.common.CommandLong
 import io.dronefleet.mavlink.common.ComponentInformation
 import io.dronefleet.mavlink.common.ComponentMetadata
+import io.dronefleet.mavlink.common.DistanceSensor
 import io.dronefleet.mavlink.common.ExtendedSysState
 import io.dronefleet.mavlink.common.FlightInformation
 import io.dronefleet.mavlink.common.GlobalPositionInt
@@ -46,7 +47,9 @@ import io.dronefleet.mavlink.common.MavCmd
 import io.dronefleet.mavlink.common.MavFrame
 import io.dronefleet.mavlink.common.MavGoto
 import io.dronefleet.mavlink.common.MavLandedState
+import io.dronefleet.mavlink.common.MavDistanceSensor
 import io.dronefleet.mavlink.common.MavProtocolCapability
+import io.dronefleet.mavlink.common.MavSensorOrientation
 import io.dronefleet.mavlink.common.MavSeverity
 import io.dronefleet.mavlink.common.MavSysStatusSensor
 import io.dronefleet.mavlink.common.MavVtolState
@@ -134,6 +137,23 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
     private var gpsSatelliteCount = 0
     private var gpsSignalLevel: GPSSignalLevel? = null
+
+    // 下视超声/TOF 测距 (厘米) 与有效性。DJI 气压相对高度近地会漂移且被落地
+    // 保护冻结, 地面站触地/盲降判决需要真实离地高, 经 DISTANCE_SENSOR 转发
+    private var ultrasonicHeightCm: Int? = null
+    private var ultrasonicUsed = false
+
+    // 起飞点海拔 (AMSL, DJI 注明不精确)。SDK 无实时 AMSL 接口, 用它加相对
+    // 高度合成 GLOBAL_POSITION_INT.alt, 避免下游把 0 米当真
+    private var takeoffLocationAltitude: Double? = null
+
+    // 下降冻结检测 (近地保护): 固件在 ~0.6-0.8 m 冻结一切下降指令且不请求
+    // 降落确认 (bag 实测: 无人干预则一直悬停, 手动点降落才结束), GCS 从遥测
+    // 无法分辨。记录最新 offboard 设定点的 vz 用于判定"持续下令下降但实际不动"
+    private var offboardDownVz = 0.0
+    private var offboardSetpointMillis = 0L
+    private var descentBlockedTicks = 0
+    private var descentBlockedAnnounced = false
 
     private var rtlHomeLocation: LocationCoordinate2D? = null
     private var rtlHomeHeight = 0
@@ -361,6 +381,11 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         addDJIListener(KeyTools.createKey(FlightControllerKey.KeyGPSSatelliteCount)) { value -> gpsSatelliteCount = value }
         addDJIListener(KeyTools.createKey(FlightControllerKey.KeyGPSSignalLevel)) { value -> gpsSignalLevel = value }
         addDJIListener(KeyTools.createKey(FlightControllerKey.KeyAircraftAttitude)) { value -> attitude = value }
+        addDJIListener(KeyTools.createKey(FlightControllerKey.KeyTakeoffLocationAltitude)) { value -> takeoffLocationAltitude = value }
+
+        // 超声键在部分机型上不主动推送 (README 已知问题), 轮询兜底
+        watchUltrasonicHeight()
+        watchDescentBlocked()
 
         // Add message senders
         addMavlinkMessageSender(SysStatus::class.java, { this.toMavlinkSysStatusMessage() }, 1000, true)
@@ -375,6 +400,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         addMavlinkMessageSender(Altitude::class.java, { this.toMavlinkAltitudeMessage() }, 100, true)
         addMavlinkMessageSender(LocalPositionNed::class.java, { this.toMavlinkLocalPositionNedMessage() }, 100, true)
         addMavlinkMessageSender(VfrHud::class.java, { this.toMavlinkVfrHudMessage() }, 200, true)
+        addMavlinkMessageSender(DistanceSensor::class.java, { this.toMavlinkDistanceSensorMessage() }, 200, true)
         addMavlinkMessageSender(FlightInformation::class.java) { this.toMavlinkFlightInformationMessage() }
 
         // Add message listeners
@@ -874,6 +900,9 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             else -> return
         }
 
+        offboardDownVz = payload.vz().toDouble()
+        offboardSetpointMillis = System.currentTimeMillis()
+
         virtualStickManager.feedVelocitySetpoint(
             forward, right,
             payload.vz().toDouble(),   // down positive, DJI vertical velocity is up positive
@@ -938,18 +967,100 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     // 下降并请求"滑动确认降落"——auto-land 和虚拟摇杆速度下降都会触发,
     // 保护高度以下下降指令会被固件忽略。常驻监视并自动确认, 放行到地面
     private fun watchLandingConfirmation() {
+        log.i("Landing confirmation watcher started")
         compositeDisposable.add(
             Observable.interval(500, TimeUnit.MILLISECONDS)
-                .flatMapSingle { djiGetValue(FlightControllerKey.KeyIsLandingConfirmationNeeded) }
-                .distinctUntilChanged()
-                .filter { it }
-                .flatMapCompletable {
-                    log.i("Landing confirmation needed, confirming automatically")
-                    djiPerformAction(FlightControllerKey.KeyConfirmLanding)
+                .flatMapSingle {
+                    // djiGetValue 无超时, 键读取挂起会让链路无声零输出, 变成
+                    // "永远 false"的假象; 超时转为错误后由 retry 重启轮询
+                    djiGetValue(FlightControllerKey.KeyIsLandingConfirmationNeeded)
+                        .timeout(1, TimeUnit.SECONDS)
                 }
+                .distinctUntilChanged()
+                .doOnNext { needed ->
+                    // 记录双向变化, 会话日志里能直接读出该键的完整轨迹
+                    if (!needed) log.i("Landing confirmation cleared")
+                }
+                .flatMapCompletable { needed ->
+                    if (needed) {
+                        log.i("Landing confirmation needed, confirming automatically")
+                        djiPerformAction(FlightControllerKey.KeyConfirmLanding)
+                    } else {
+                        Completable.complete()
+                    }
+                }
+                .retry()
                 .subscribe(
                     {},
                     { error -> RXUtils.handleError(error) }
+                )
+        )
+    }
+
+    // 下视测距轮询。超声键在部分机型不推送 (README 已知注意事项 2), 用与
+    // watchLandingConfirmation 相同的 interval+读键模式兜底; 读键偶发失败
+    // 时 retry() 重订整个轮询链, 不让单次错误永久杀掉数据源
+    private fun watchUltrasonicHeight() {
+        compositeDisposable.add(
+            Observable.interval(200, TimeUnit.MILLISECONDS)
+                .flatMapSingle { djiGetValue(FlightControllerKey.KeyIsUltrasonicUsed) }
+                .retry()
+                .subscribe(
+                    { ultrasonicUsed = it },
+                    { }
+                )
+        )
+        compositeDisposable.add(
+            Observable.interval(200, TimeUnit.MILLISECONDS)
+                .flatMapSingle { djiGetValue(FlightControllerKey.KeyUltrasonicHeight) }
+                .retry()
+                .subscribe(
+                    { ultrasonicHeightCm = it },
+                    { }
+                )
+        )
+    }
+
+    // 下降冻结监视。近地保护冻结期间固件不置位 KeyIsLandingConfirmationNeeded
+    // (会话日志零条确认记录), GCS 只能从遥测看到"高度不动"; 这里把判定结果
+    // 主动做成 STATUSTEXT 告知, 提示地面站此时应切换固件 LAND 而不是继续
+    // 发下降指令。只告警不接管控制——切 LAND 的决策权在地面站
+    private fun watchDescentBlocked() {
+        compositeDisposable.add(
+            Observable.interval(500, TimeUnit.MILLISECONDS)
+                .subscribe(
+                    {
+                        val altitude = aircraftLocation?.altitude ?: return@subscribe
+                        val setpointFresh = System.currentTimeMillis() - offboardSetpointMillis < 1000
+                        // NED vz 下正; DJI 垂直速度上正且量化到 0.1 m/s
+                        val blocked = isFlying && setpointFresh &&
+                                offboardDownVz >= 0.15 &&
+                                Math.abs(aircraftVelocity?.z?.toDouble() ?: 0.0) <= 0.05 &&
+                                altitude <= 2.0
+                        if (blocked) {
+                            descentBlockedTicks++
+                            if (descentBlockedTicks == 6 && !descentBlockedAnnounced) {
+                                descentBlockedAnnounced = true
+                                log.i("Descent blocked by landing protection at $altitude m")
+                                sendMessage(
+                                    Statustext.builder()
+                                        .severity(MavSeverity.MAV_SEVERITY_WARNING)
+                                        .text(
+                                            MavlinkTexts.truncateStatustext(
+                                                "Landing protection: descent blocked at %.1f m, firmware ignores descent commands; switch to LAND".format(
+                                                    altitude
+                                                )
+                                            )
+                                        )
+                                        .build()
+                                )
+                            }
+                        } else {
+                            descentBlockedTicks = 0
+                            descentBlockedAnnounced = false
+                        }
+                    },
+                    { }
                 )
         )
     }
@@ -1318,10 +1429,36 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             .lat((location.latitude * 1e7).toInt())
             .lon((location.longitude * 1e7).toInt())
             .relativeAlt((location.altitude * 1e3).toInt())
+            // KeyAircraftLocation3D 的高度是相对起飞点高度 (DJI 官方文档), alt
+            // 字段要求 AMSL: 用起飞点海拔近似合成, 起飞点海拔未知时保持 0
+            .alt(amslAltitudeMm(location.altitude) ?: 0)
             .vx((velocity.x * 1e2).toInt())
             .vy((velocity.y * 1e2).toInt())
             .vz((velocity.z * 1e2).toInt())
             .hdg((((currentAttitude.yaw * 1e2 + 360) % 360) * 1e2).toInt())
+            .build()
+    }
+
+    // DJI SDK 没有实时 AMSL 接口 (KeyAircraftLocation3D 为相对起飞点高度),
+    // 用起飞点海拔 (KeyTakeoffLocationAltitude, 官方注明不精确) 加相对高度近似
+    private fun amslAltitudeMm(relativeAltMeters: Double): Int? {
+        return takeoffLocationAltitude?.let { ((it + relativeAltMeters) * 1e3).toInt() }
+    }
+
+    // 下视超声/TOF 真实离地高。气压相对高度近地漂移且会被落地保护冻结读数
+    // (bag 实测悬停 50 s 死钉 0.8 m), 地面站的触地/盲降判决依赖本消息
+    // (MAVLink id 132, dankong 侧已在请求该消息间隔并接入 pland rangefinder 链路)
+    private fun toMavlinkDistanceSensorMessage(): DistanceSensor? {
+        val heightCm = ultrasonicHeightCm ?: return null
+        return DistanceSensor.builder()
+            .timeBootMs(millisSinceBoot)
+            .minDistance(10)
+            .maxDistance(1000)
+            .currentDistance(heightCm.coerceIn(0, 65535))
+            .type(MavDistanceSensor.MAV_DISTANCE_SENSOR_LASER)
+            .id(0)
+            .orientation(MavSensorOrientation.MAV_SENSOR_ROTATION_PITCH_270)
+            .covariance(65535)
             .build()
     }
 
@@ -1525,7 +1662,9 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
             .fixType(gpsFixType)
             .lat((location.latitude * 1e7).roundToInt())
             .lon((location.longitude * 1e7).roundToInt())
-            .alt(location.altitude.roundToInt())
+            // GPS_RAW_INT.alt 规格为 AMSL 毫米, 相对高度在此语义错误; 无起飞点
+            // 海拔时退回旧行为 (相对高度)
+            .alt(amslAltitudeMm(location.altitude) ?: location.altitude.roundToInt())
             .eph(UINT16_MAX)
             .epv(UINT16_MAX)
             .vel((velocity.x * 100).roundToInt())

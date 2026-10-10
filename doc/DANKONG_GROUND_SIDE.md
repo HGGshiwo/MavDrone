@@ -67,11 +67,24 @@
 
 - 普通降落（dankong `robot->land()` = DJI auto-land）：固件自动下压云台。
 - pland 精准降落（Offboard）：固件不管云台，由 `SetGimbalEvent(90)` 下压。
-- **落地保护（实测确认）**：下降到离地约 0.5-1 m 时固件暂停下降并请求
-  "滑动确认降落"，此高度以下所有下降指令（含虚拟摇杆）被忽略。本 App
-  **常驻**监视 `KeyIsLandingConfirmationNeeded`（不限 auto-land 场景）并
-  自动 `KeyConfirmLanding`，确认后下降继续。App logcat 关键字：
-  `Landing confirmation needed`。
+- **落地保护（2026-10-10 bag 实测更新）**：固件在气压相对高度约 0.6-0.8 m
+  冻结一切下降指令。分两种场景：
+  - *auto-land*：暂停并置位 `KeyIsLandingConfirmationNeeded`（官方文档的
+    "0.7 m 悬停等确认"），本 App 常驻监视并自动 `KeyConfirmLanding`，确认后
+    继续下降。App logcat 关键字：`Landing confirmation needed`。
+  - *虚拟摇杆/offboard 速度下降*：**冻结但 confirmation 键从不置位**（会话
+    日志零条确认记录），气压高度读数同时死钉不变（0.800/0.600 恒定）。
+    **悬停没有超时兜底，不会自行恢复**——两次实测均是人工在 App 端手动点
+    降落才恢复下降（日志仅见 `AUTO_LANDING` 模式切换，此前无任何 MAVLink
+    命令）。此场景地面站收到本 App 的 STATUSTEXT 后**必须主动切换固件
+    LAND**，不要等固件自己恢复；本 App 检测到"持续下令下降 + 垂直速度为零
+    + 高度 ≤2 m"达 3 秒会发 STATUSTEXT：
+    `Landing protection: descent blocked at ...`。
+- **真实离地高（AGL）**：本 App 现已发送 `DISTANCE_SENSOR`（下视超声/TOF，
+  5 Hz）。dankong 既有链路（MAVSDK `subscribe_distance_sensor` →
+  `ctx.rangefinder_alt` → `/mavros/distance_sensor/rangefinder_pub`）无需改
+  代码即激活；pland `get_current_z` 在 3 m 以下优先采用测距值（`frame_height`
+  补偿起落架高度），触地/盲降判决不再依赖漂移且会被冻结的气压高度。
 - **低空模式切换（实测确认）**：pland 流程在低空会主动切
   `GUIDED → LAND`（`pland_controller` 的 BLIND_DROP 或 `LandState` 判定），
   之后固件接管下降、offboard 速度指令不再生效——这是固件模式语义，不是

@@ -53,6 +53,9 @@ MavDrone/
 | 支持地面站以 ArduPilot 风格切换 GUIDED 模式：`MAV_CMD_DO_SET_MODE` 携带主模式 4 且无 PX4 自动子模式时，与 PX4 OFFBOARD 一并映射为地面站受控状态（置 `MAV_MODE_FLAG_GUIDED_ENABLED`，回读为 OFFBOARD）；`MAV_CMD_NAV_TAKEOFF` 在 GUIDED 标志置位时同样放行 | `communication/components/Drone.kt` |
 | `MAV_CMD_NAV_TAKEOFF` 支持指定起飞高度：param7 高于 1.2 米时，DJI 自动起飞（固定约 1.2 米，固件最低值）完成后自动启用虚拟摇杆、垂直位置模式爬升到目标高度（相对起飞点），到位判定为容差 0.2 米且连续 3 个周期，带总超时保护，`COMMAND_CANCEL` 可中止爬升；param7 低于 1.2 米或未指定时按 1.2 米处理，即普通自动起飞。虚拟摇杆使用大疆官方 `dji.v5.manager.aircraft.virtualstick.VirtualStickManager` 封装（含控制权接管）与高级模式定高，直接用裸键不接管控制权时飞控会忽略摇杆数据 | `communication/components/Drone.kt`、新增 `communication/components/impl/VirtualStickManager.kt` |
 | 新增参数 `ARMING_CHECK`：解锁前检测的总开关（0 为关闭，1 为开启），数值持久化保存，并作为上述检测的生效条件 | `communication/components/impl/DroneParameters.kt`、`Drone.kt` |
+| 新增 `DISTANCE_SENSOR`（id 132）：把下视超声/TOF 离地高（`KeyUltrasonicHeight`，200 ms 轮询，朝下 `PITCH_270`，量程 0.1-10 m）转发给地面站。气压相对高度近地有漂移、且落地保护冻结期间读数死钉不动（bag 实测悬停 50 s 恒 0.800），触地/盲降判决需要真实 AGL；dankong 侧本就订阅该消息并已接入 pland 测距链路，此改动无需地面站改代码即激活 | `communication/components/Drone.kt` |
+| `GLOBAL_POSITION_INT.alt` / `GPS_RAW_INT.alt`（AMSL）改用 `KeyTakeoffLocationAltitude` + 相对高度合成。DJI SDK 无实时 AMSL 接口（`KeyAircraftLocation3D` 的高度为相对起飞点高度，官方文档明确），此前这两个字段恒为 0，下游（NavSatFix.altitude）把 0 米当真；起飞点海拔官方注明不精确，未知时保持 0 | `communication/components/Drone.kt` |
+| 下降冻结告警：检测"offboard 持续下令下降（vz ≥ 0.15 m/s）+ 实际垂直速度为零 + 相对高度 ≤ 2 m"持续 3 秒，发 `STATUSTEXT`（WARNING）提示地面站固件已忽略下降指令、应切换 LAND。只告警不接管控制，切 LAND 的决策权在地面站 | `communication/components/Drone.kt` |
 | 解锁命令 `MAV_CMD_COMPONENT_ARM_DISARM` 在执行前先运行解锁前检测：存在失败项时发送 `PreArm: ` 文本并拒绝解锁 | `communication/components/Drone.kt` |
 | 主界面固定为横屏，消除旋转屏幕导致的界面重建崩溃 | `app/src/main/AndroidManifest.xml` |
 | 模拟器默认配置写死为：纬度 30.11269、经度 120.1429、卫星数 20（面板仍可临时调整） | `uxsdk/.../simulatorcontrol/SimulatorControlWidget.kt` |
@@ -121,6 +124,9 @@ MavDrone/
    - `Received battery overview`：聚合电池键有数据；
    - `Prearm checks passed` / `Cannot arm drone, prearm checks failed`：解锁前检测结果；
    - `Start virtual stick climb to ...` / `Climb height of ... reached` / `Climb to ... failed`：虚拟摇杆爬升过程；
+   - `Descent blocked by landing protection at ... m`：下降被近地保护冻结（详见注意事项 10）；
    - `Cannot send message ...`：某条消息构建或发送异常。
 
 9. **工作区中的其他既有调整**（目标系统版本、MultiDex、地图组件地图样式等）不属于本文档记录范围。
+
+10. **近地保护会无提示冻结一切下降指令（bag 实测，2026-10-10）。** Mini 4 Pro 固件在气压相对高度约 0.6-0.8 m 处直接忽略所有下降指令（auto-land、虚拟摇杆、offboard 均然），且此场景下**不置位** `KeyIsLandingConfirmationNeeded`（与官方文档描述的 auto-land "0.7 m 悬停等确认" 流程不同，会话日志零条确认记录）。**悬停没有超时兜底，不会自行恢复**——实测两次均是人工在 App 端手动点降落才恢复下降落地（日志仅见 `AUTO_LANDING` 模式切换，此前无任何 MAVLink 命令）。期间气压高度读数死钉不变（0.800/0.600 恒定）。无人值守的自动降落必须由地面站在 ~1 m 主动切换固件 LAND；下游判决应改用 `DISTANCE_SENSOR` 的真实 AGL，App 会以 `Descent blocked by landing protection` STATUSTEXT 提示冻结发生。

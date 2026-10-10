@@ -141,7 +141,7 @@ Mission-level conversion notes:
 | `EXTENDED_SYS_STATE` | Autopilot component | Landed/VTOL semantics are mapped from DJI states and may not match PX4 state machine transitions exactly. |
 | `GPS_RAW_INT` | Autopilot component | GPS reporting is mapped from DJI keys; fix-level semantics can differ from PX4 GPS pipeline details. |
 | `ATTITUDE` | Autopilot component | Attitude is DJI-derived; frame/sign conventions are mapped for MAVLink compatibility. |
-| `GLOBAL_POSITION_INT` | Autopilot component | Position/velocity/heading are translated from DJI representations. |
+| `GLOBAL_POSITION_INT` | Autopilot component | Position/velocity/heading are translated from DJI representations. `alt` (AMSL) is synthesized as takeoff-location altitude (`KeyTakeoffLocationAltitude`, DJI marks it imprecise) plus the relative altitude, because DJI exposes no realtime AMSL; it is 0 when the takeoff altitude is unknown. |
 | `ALTITUDE` | Autopilot component | Relative altitude mapping is DJI-source dependent. |
 | `HOME_POSITION` | Autopilot component | Home position semantics follow DJI homepoint handling. |
 | `AUTOPILOT_VERSION` | Autopilot component | Capability flags are curated for supported features and may differ from PX4 capability breadth. |
@@ -180,6 +180,7 @@ Mission-level conversion notes:
 | `SMART_BATTERY_INFO` | Battery components | Smart battery fields come from known battery profiles plus DJI key values. |
 | `RC_CHANNELS` | Remote controller integration | Channel values are scaled from DJI controller ranges to MAVLink RC range conventions. |
 | `OBSTACLE_DISTANCE` | Radar/perception integration | Obstacle fan is resampled/collapsed to MAVLink message constraints from DJI obstacle array size. |
+| `DISTANCE_SENSOR` | Autopilot component | Downward ultrasonic/TOF AGL from DJI `KeyUltrasonicHeight` (orientation `PITCH_270`, 5 Hz). Gives consumers a true above-ground-latitude source: the DJI barometric relative altitude drifts near ground and its reading freezes while the firmware landing-protection band blocks further descent. Ground stations may use it for touchdown/blind-drop decisions; the reading is gated by range (0.1-10 m) and freshness on the consumer side. |
 
 ## Important differences from default PX4/common expectations
 
