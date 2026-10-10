@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -47,9 +48,32 @@ import androidx.core.graphics.drawable.toDrawable
 
 class MainActivity : AppCompatActivity() {
     //region Fields
-    private val log = Logger("MainActivity")
+    private val log = Logger("MavMainActivity")
 
     private lateinit var binding: ActivityMainBinding
+
+    // 起降按钮可见性监控: 按钮状态依赖 KeyConnection 推送, 该键在本机型上时
+    // 有时无 (README 已知问题 2), 推送缺失时按钮停留在初始 DISCONNECTED(GONE)。
+    // 记录初始状态与每次可见性变化, 用于确认"消失/从未出现"事件
+    private var takeOffButtonLastVisibility = -1
+    private val takeOffButtonLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+        val visibility = binding.widgetTakeOff.visibility
+        if (visibility == takeOffButtonLastVisibility) {
+            return@OnGlobalLayoutListener
+        }
+        val name = when (visibility) {
+            View.VISIBLE -> "VISIBLE"
+            View.GONE -> "GONE"
+            View.INVISIBLE -> "INVISIBLE"
+            else -> visibility.toString()
+        }
+        if (takeOffButtonLastVisibility == -1) {
+            log.i("TakeOff button initial visibility: $name")
+        } else {
+            log.i("TakeOff button visibility changed: -> $name")
+        }
+        takeOffButtonLastVisibility = visibility
+    }
 
     private var lastDevicePosition = ComponentIndexType.UNKNOWN
     private var lastLensType = CameraLensType.UNKNOWN
@@ -105,6 +129,8 @@ class MainActivity : AppCompatActivity() {
         window.setBackgroundDrawable(Color.BLACK.toDrawable())
 
         DJINetworkManager.getInstance().addNetworkStatusListener(networkStatusListener)
+
+        binding.widgetTakeOff.viewTreeObserver.addOnGlobalLayoutListener(takeOffButtonLayoutListener)
     }
 
     private fun isGimbalAdjustClicked(broadcastValues: BroadcastValues) {
@@ -138,6 +164,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        val viewTreeObserver = binding.widgetTakeOff.viewTreeObserver
+        if (viewTreeObserver.isAlive) {
+            viewTreeObserver.removeOnGlobalLayoutListener(takeOffButtonLayoutListener)
+        }
         binding.widgetMap.onDestroy()
         MediaDataCenter.getInstance().cameraStreamManager.removeAvailableCameraUpdatedListener(availableCameraUpdatedListener)
         DJINetworkManager.getInstance().removeNetworkStatusListener(networkStatusListener)

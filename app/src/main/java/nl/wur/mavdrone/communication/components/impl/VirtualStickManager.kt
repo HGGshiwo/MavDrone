@@ -50,7 +50,7 @@ class VirtualStickManager(
     private val droneWR: WeakReference<Drone>,
     private val headingDegreesProvider: () -> Double?
 ) {
-    private val log = Logger("VirtualStickManager")
+    private val log = Logger("MavVirtualStickManager")
     private var climbDisposable: Disposable? = null
 
     /**
