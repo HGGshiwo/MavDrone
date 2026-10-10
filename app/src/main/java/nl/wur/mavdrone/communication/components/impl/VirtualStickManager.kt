@@ -7,6 +7,8 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
+import dji.sdk.keyvalue.key.FlightAssistantKey
+import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.value.flightcontroller.FlightCoordinateSystem
 import dji.sdk.keyvalue.value.flightcontroller.FlightMode
 import dji.sdk.keyvalue.value.flightcontroller.RollPitchControlMode
@@ -31,6 +33,7 @@ import nl.wur.mavdrone.communication.MavConnection
 import nl.wur.mavdrone.communication.components.Drone
 import nl.wur.mavdrone.utils.Logger
 import nl.wur.mavdrone.utils.MavlinkTexts
+import nl.wur.mavdrone.utils.RXUtils.Companion.djiSetValue
 
 /**
  * Climbs to a requested height after the DJI auto takeoff by engaging the virtual
@@ -49,6 +52,17 @@ class VirtualStickManager(
 ) {
     private val log = Logger("VirtualStickManager")
     private var climbDisposable: Disposable? = null
+
+    /**
+     * Virtual stick 接管期间关闭下视避障与降落保护（消费机型 Mini 4 Pro/Mini 3/
+     * Mini 3 Pro 近地下降会被这两层冻结，DJI 官方客服确认需同时关闭才能用
+     * 虚拟摇杆降到底），归还时恢复。可通过参数 VS_LAND_PROT 关闭该行为。
+     */
+    @Volatile
+    var disableProtectionsWhileActive = true
+
+    @Volatile
+    private var protectionsDisabled = false
 
     @Volatile
     private var velocityDisposable: Disposable? = null
@@ -228,6 +242,7 @@ class VirtualStickManager(
                                 // stick interface only streams velocity commands
                                 DJIVirtualStickManager.getInstance().setVirtualStickAdvancedModeEnabled(true)
                                 log.i("Virtual stick control enabled")
+                                applyLandingProtections(disable = disableProtectionsWhileActive)
                                 emitter.onComplete()
                             }
 
@@ -309,6 +324,7 @@ class VirtualStickManager(
     }
 
     private fun releaseVirtualStick() {
+        applyLandingProtections(disable = false)
         cancelClimbSession()
         cancelVelocitySession()
 
@@ -322,6 +338,34 @@ class VirtualStickManager(
                 log.w("Disabling virtual stick failed: ${error.description()}")
             }
         })
+    }
+
+    // 下视避障与降落保护会在近地冻结虚拟摇杆下降（DJI 客服确认，消费机型需
+    // 同时关闭两者才能降到底）。接管期间关闭、归还时恢复；写键失败不致命，
+    // 只记日志（此时表现为原有的近地冻结行为，由 Descent blocked 告警兜底）
+    private fun applyLandingProtections(disable: Boolean) {
+        if (disable == protectionsDisabled) {
+            return
+        }
+        protectionsDisabled = disable
+        val restore = !disable
+        log.i("%s downward avoidance and landing protection".format(
+            if (disable) "Disabling" else "Restoring"))
+        sendStatus(
+            MavSeverity.MAV_SEVERITY_INFO,
+            if (disable) "Virtual stick: downward avoidance + landing protection disabled"
+            else "Virtual stick: downward avoidance + landing protection restored"
+        )
+        djiSetValue(KeyTools.createKey(FlightAssistantKey.KeyDownwardsAvoidanceEnable), restore)
+            .subscribe(
+                { },
+                { error -> log.e("Set DownwardsAvoidanceEnable failed: ${error.message}") }
+            )
+        djiSetValue(KeyTools.createKey(FlightAssistantKey.KeyLandingProtectionEnabled), restore)
+            .subscribe(
+                { },
+                { error -> log.e("Set LandingProtectionEnabled failed: ${error.message}") }
+            )
     }
 
     private fun sendStatus(severity: MavSeverity, text: String) {

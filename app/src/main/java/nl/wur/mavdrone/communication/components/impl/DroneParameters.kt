@@ -159,6 +159,31 @@ class DroneParameters(
             .get("ARMING_CHECK", 1)
             .let { droneWR.get()?.prearmChecksEnabled = it != 0 }
         //endregion
+
+        //region: param VS_LAND_PROT
+        val vsLandProt = MavParameter.fromAndroidParameter(
+            connectionWR,
+            droneWR,
+            "VS_LAND_PROT",
+            true,
+            false
+        ) { disable: Boolean ->
+            droneWR.get()?.virtualStickManager?.disableProtectionsWhileActive = disable
+        }
+        vsLandProt.setMetadata(
+            "Common",
+            "Landing",
+            "Disable near-ground protections during virtual stick",
+            "Consumer models (Mini 4 Pro/Mini 3/Mini 3 Pro) freeze virtual stick descent near the ground behind downward obstacle avoidance and landing protection (confirmed by DJI support). When enabled (default), the app disables both while the virtual stick is engaged and restores them on release. Takes effect on the next virtual stick session after a change.",
+            ""
+        )
+        droneWR.get()?.addParameter(vsLandProt)
+
+        // Sync the initial state with the persisted value
+        GenericPreferenceManager<Boolean>(connectionWR.get()!!.androidPreferences)
+            .get("VS_LAND_PROT", true)
+            .let { droneWR.get()?.virtualStickManager?.disableProtectionsWhileActive = it }
+        //endregion
         //region: param FENCE_ACTION
         val fenceAction = MavParameter.fromAndroidParameter(
             connectionWR,

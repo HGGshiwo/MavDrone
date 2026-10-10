@@ -56,6 +56,7 @@ MavDrone/
 | 新增 `DISTANCE_SENSOR`（id 132）：把下视超声/TOF 离地高（`KeyUltrasonicHeight`，200 ms 轮询，朝下 `PITCH_270`，量程 0.1-10 m）转发给地面站。气压相对高度近地有漂移、且落地保护冻结期间读数死钉不动（bag 实测悬停 50 s 恒 0.800），触地/盲降判决需要真实 AGL；dankong 侧本就订阅该消息并已接入 pland 测距链路，此改动无需地面站改代码即激活 | `communication/components/Drone.kt` |
 | `GLOBAL_POSITION_INT.alt` / `GPS_RAW_INT.alt`（AMSL）改用 `KeyTakeoffLocationAltitude` + 相对高度合成。DJI SDK 无实时 AMSL 接口（`KeyAircraftLocation3D` 的高度为相对起飞点高度，官方文档明确），此前这两个字段恒为 0，下游（NavSatFix.altitude）把 0 米当真；起飞点海拔官方注明不精确，未知时保持 0 | `communication/components/Drone.kt` |
 | 下降冻结告警：检测"offboard 持续下令下降（vz ≥ 0.15 m/s）+ 实际垂直速度为零 + 相对高度 ≤ 2 m"持续 3 秒，发 `STATUSTEXT`（WARNING）提示地面站固件已忽略下降指令、应切换 LAND。只告警不接管控制，切 LAND 的决策权在地面站 | `communication/components/Drone.kt` |
+| 近地冻结根因修复（DJI 客服确认）：消费机型的虚拟摇杆近地下降被**下视避障 + 降落保护**两层冻结。虚拟摇杆接管期间自动关闭 `KeyDownwardsAvoidanceEnable` 与 `KeyLandingProtectionEnabled`，归还时自动恢复；新增参数 `VS_LAND_PROT`（默认开）控制该行为，仅对下一次接管生效 | `communication/components/impl/VirtualStickManager.kt`、`DroneParameters.kt` |
 | 解锁命令 `MAV_CMD_COMPONENT_ARM_DISARM` 在执行前先运行解锁前检测：存在失败项时发送 `PreArm: ` 文本并拒绝解锁 | `communication/components/Drone.kt` |
 | 主界面固定为横屏，消除旋转屏幕导致的界面重建崩溃 | `app/src/main/AndroidManifest.xml` |
 | 模拟器默认配置写死为：纬度 30.11269、经度 120.1429、卫星数 20（面板仍可临时调整） | `uxsdk/.../simulatorcontrol/SimulatorControlWidget.kt` |
@@ -129,4 +130,4 @@ MavDrone/
 
 9. **工作区中的其他既有调整**（目标系统版本、MultiDex、地图组件地图样式等）不属于本文档记录范围。
 
-10. **近地保护会无提示冻结一切下降指令（bag 实测，2026-10-10）。** Mini 4 Pro 固件在气压相对高度约 0.6-0.8 m 处直接忽略所有下降指令（auto-land、虚拟摇杆、offboard 均然），且此场景下**不置位** `KeyIsLandingConfirmationNeeded`（与官方文档描述的 auto-land "0.7 m 悬停等确认" 流程不同，会话日志零条确认记录）。**悬停没有超时兜底，不会自行恢复**——实测两次均是人工在 App 端手动点降落才恢复下降落地（日志仅见 `AUTO_LANDING` 模式切换，此前无任何 MAVLink 命令）。期间气压高度读数死钉不变（0.800/0.600 恒定）。无人值守的自动降落必须由地面站在 ~1 m 主动切换固件 LAND；下游判决应改用 `DISTANCE_SENSOR` 的真实 AGL，App 会以 `Descent blocked by landing protection` STATUSTEXT 提示冻结发生。
+10. **近地保护会无提示冻结一切下降指令（bag 实测，2026-10-10；根因已由 DJI 客服确认）。** Mini 4 Pro 固件在气压相对高度约 0.6-0.8 m（真实离地约 0.3 m）处冻结一切非 auto-landing 的下降指令（虚拟摇杆、offboard 均然），且此场景下**不置位** `KeyIsLandingConfirmationNeeded`。根因是**下视避障 + 降落保护两层门控**：行业机只需关下避障；消费机型（Mini 4 Pro/Mini 3/Mini 3 Pro）需同时关闭降落保护（`FlightAssistantKey.KeyLandingProtectionEnabled`）。本 App 已在虚拟摇杆接管期间自动关闭两者、归还时恢复（参数 `VS_LAND_PROT`，默认开）。门控触发时的行为特征（供历史日志对照）：**悬停没有超时兜底，不会自行恢复**——实测两次均是人工在 App 端手动点降落才恢复下降落地（日志仅见 `AUTO_LANDING` 模式切换，此前无任何 MAVLink 命令）；期间气压高度读数死钉不变（0.800/0.600 恒定）。保护关闭后虚拟摇杆应能正常降到底，触地电机停止由固件落地自动停桨完成。
