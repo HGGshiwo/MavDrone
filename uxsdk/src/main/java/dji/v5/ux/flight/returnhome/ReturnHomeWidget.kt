@@ -448,17 +448,15 @@ open class ReturnHomeWidget @JvmOverloads constructor(
                     ReturnHomeState.RETURN_HOME_DISABLED -> returnHomeActionIcon
                     ReturnHomeState.RETURNING_TO_HOME,
                     ReturnHomeState.FORCED_RETURNING_TO_HOME -> cancelReturnHomeActionIcon
-                    else -> null
+                    // 断连/自动降落中不再隐藏(原因同 TakeOffWidget): 常显置灰
+                    ReturnHomeState.DISCONNECTED -> returnHomeActionIcon
+                    ReturnHomeState.AUTO_LANDING -> returnHomeActionIcon
                 })
         isEnabled = !(returnHomeState == ReturnHomeState.RETURN_HOME_DISABLED ||
-                returnHomeState == ReturnHomeState.FORCED_RETURNING_TO_HOME)
-        visibility =
-                if (returnHomeState == ReturnHomeState.AUTO_LANDING ||
-                        returnHomeState == ReturnHomeState.DISCONNECTED) {
-                    View.GONE
-                } else {
-                    View.VISIBLE
-                }
+                returnHomeState == ReturnHomeState.FORCED_RETURNING_TO_HOME ||
+                returnHomeState == ReturnHomeState.DISCONNECTED ||
+                returnHomeState == ReturnHomeState.AUTO_LANDING)
+        visibility = View.VISIBLE
         updateImageAlpha()
     }
 

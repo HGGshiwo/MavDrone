@@ -42,6 +42,7 @@ import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import nl.wur.mavdrone.databinding.ActivityMainBinding
 import nl.wur.mavdrone.utils.Logger
+import nl.wur.mavdrone.utils.RxException
 import nl.wur.mavdrone.widgets.MavControlWidget
 import java.util.concurrent.TimeUnit
 import androidx.core.graphics.drawable.toDrawable
@@ -52,27 +53,61 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
-    // 起降按钮可见性监控: 按钮状态依赖 KeyConnection 推送, 该键在本机型上时
-    // 有时无 (README 已知问题 2), 推送缺失时按钮停留在初始 DISCONNECTED(GONE)。
-    // 记录初始状态与每次可见性变化, 用于确认"消失/从未出现"事件
-    private var takeOffButtonLastVisibility = -1
-    private val takeOffButtonLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
-        val visibility = binding.widgetTakeOff.visibility
-        if (visibility == takeOffButtonLastVisibility) {
+    // GUIDED 按钮状态(经 MavlinkStatusListener 同步, 显示实际 guided 状态而非点击意图)
+    private var guidedActive = false
+    private var guidedButtonConnected = false
+    private val guidedButtonActiveColor = Color.parseColor("#2196F3")
+    private val guidedButtonInactiveColor = Color.parseColor("#444444")
+
+    private val mavlinkStatusListener = object : MavManager.MavlinkStatusListener {
+        override fun onStatusChanged(status: MavManager.MavlinkStatus) {
+            guidedActive = status.guidedActive
+            guidedButtonConnected = status.gcsConnected
+            updateGuidedButton()
+        }
+
+        override fun onError(error: RxException) {}
+    }
+
+    // 起降/返航按钮强制器(取代 a2f9905 的纯可见性监控): uxsdk 按钮状态依赖
+    // KeyConnection 推送, 该键在本机型上时有时无(README 已知问题 2), 推送缺失时
+    // 按钮停留在初始 GONE。把 uxsdk 的"隐藏"重解释为"置灰": 想隐藏 -> 强制
+    // VISIBLE 且不可点(alpha 0.4), 认为可用 -> 恢复。可用性判断完全沿用 uxsdk
+    // 内部状态机, 不重复造轮子
+    private val grayedFlightButtons = mutableSetOf<View>()
+    private val flightButtonEnforcer = ViewTreeObserver.OnGlobalLayoutListener {
+        // FPV 全屏模式统一隐藏所有悬浮控件, 此时跳过强制
+        if (viewVisibilityMap.isNotEmpty()) {
             return@OnGlobalLayoutListener
         }
-        val name = when (visibility) {
-            View.VISIBLE -> "VISIBLE"
-            View.GONE -> "GONE"
-            View.INVISIBLE -> "INVISIBLE"
-            else -> visibility.toString()
+        enforceFlightButton(binding.widgetTakeOff)
+        enforceFlightButton(binding.widgetReturnToHome)
+    }
+
+    private fun enforceFlightButton(widget: View) {
+        val name = widget.resources.getResourceEntryName(widget.id)
+        if (widget.visibility != View.VISIBLE) {
+            if (grayedFlightButtons.add(widget)) {
+                log.i("$name unavailable: graying out")
+            }
+            widget.visibility = View.VISIBLE
+            widget.isEnabled = false
+            widget.alpha = 0.4f
+        } else if (grayedFlightButtons.remove(widget)) {
+            // 只还原透明度, 不动 isEnabled —— 可用与否由 uxsdk 状态机决定,
+            // 强制器不得把 uxsdk 有意禁用的按钮重新点亮
+            log.i("$name available")
+            widget.alpha = 1.0f
         }
-        if (takeOffButtonLastVisibility == -1) {
-            log.i("TakeOff button initial visibility: $name")
-        } else {
-            log.i("TakeOff button visibility changed: -> $name")
-        }
-        takeOffButtonLastVisibility = visibility
+    }
+
+    private fun updateGuidedButton() {
+        binding.btnGuidedMode.isEnabled = guidedButtonConnected
+        binding.btnGuidedMode.alpha = if (guidedButtonConnected) 1.0f else 0.4f
+        binding.btnGuidedMode.setBackgroundColor(
+            if (guidedActive && guidedButtonConnected) guidedButtonActiveColor
+            else guidedButtonInactiveColor
+        )
     }
 
     private var lastDevicePosition = ComponentIndexType.UNKNOWN
@@ -130,7 +165,9 @@ class MainActivity : AppCompatActivity() {
 
         DJINetworkManager.getInstance().addNetworkStatusListener(networkStatusListener)
 
-        binding.widgetTakeOff.viewTreeObserver.addOnGlobalLayoutListener(takeOffButtonLayoutListener)
+        MavManager.getInstance().addMavlinkStatusListener(mavlinkStatusListener)
+        binding.btnGuidedMode.setBackgroundColor(guidedButtonInactiveColor)
+        binding.widgetTakeOff.viewTreeObserver.addOnGlobalLayoutListener(flightButtonEnforcer)
     }
 
     private fun isGimbalAdjustClicked(broadcastValues: BroadcastValues) {
@@ -155,6 +192,11 @@ class MainActivity : AppCompatActivity() {
             binding.widgetHorizontalSituationIndicator.visibility = View.VISIBLE
             binding.settingMenuGimbalFineTune.visibility = View.GONE
         }
+
+        binding.btnGuidedMode.setOnClickListener {
+            log.i("GUIDED button clicked, requesting ${if (guidedActive) "exit" else "enter"} guided")
+            MavManager.getInstance().setGuidedMode(!guidedActive)
+        }
     }
 
     private fun toggleRightDrawer() {
@@ -166,8 +208,9 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         val viewTreeObserver = binding.widgetTakeOff.viewTreeObserver
         if (viewTreeObserver.isAlive) {
-            viewTreeObserver.removeOnGlobalLayoutListener(takeOffButtonLayoutListener)
+            viewTreeObserver.removeOnGlobalLayoutListener(flightButtonEnforcer)
         }
+        MavManager.getInstance().removeMavlinkStatusListener(mavlinkStatusListener)
         binding.widgetMap.onDestroy()
         MediaDataCenter.getInstance().cameraStreamManager.removeAvailableCameraUpdatedListener(availableCameraUpdatedListener)
         DJINetworkManager.getInstance().removeNetworkStatusListener(networkStatusListener)
@@ -246,7 +289,7 @@ class MainActivity : AppCompatActivity() {
                 binding.widgetAutoExposureLock, binding.widgetFocusMode, binding.widgetFocusExposureSwitch, binding.widgetCameraControls,
                 binding.widgetFocalZoom, binding.widgetTakeOff, binding.widgetMissionControl, binding.widgetLensControl,
                 binding.widgetReturnToHome, binding.widgetSimulatorControl, binding.widgetMavlinkControl, binding.widgetFpvFlightDisplayWidget,
-                binding.widgetMap, binding.widgetPanelSystemStatusList, binding.manualRightNavSetting
+                binding.widgetMap, binding.widgetPanelSystemStatusList, binding.btnGuidedMode, binding.manualRightNavSetting
             )) {
                 binding.widgetPrimaryFpv.cameraNameTextColor = Color.TRANSPARENT
                 binding.widgetPrimaryFpv.cameraSideTextColor = Color.TRANSPARENT

@@ -21,6 +21,22 @@
   检查 `chmod +x scripts/*.py`。
 - dankong 启动时若连不上本 App（`connect to fcu failed`）会直接 abort，先确认
   App 的 MAVLink server 已启动。
+- 若 App 显示的 Server address 是 172.x/10.x 网段且连不上：历史版本取的是系统
+  默认路由网络的首个 IPv4，遥控器开了蜂窝数据（10.x）、USB 共享或 VPN
+  （172.16-31.x）时显示的就是不可达地址；现版本已改为优先取 `wlan*`/`eth*`
+  接口并在每轮等待连接时刷新。服务端实际绑定 `0.0.0.0:5760`，用
+  `adb shell ip addr show wlan0` 的地址填 `mavsdk_url` 即可连接。
+- **offboard/虚拟摇杆有 guided 准入门控**：App 界面左侧新增 GUIDED 按钮，只有
+  guided 状态下才响应速度流与起飞爬升。进入 guided 的途径：MAVSDK
+  `Offboard::start()`（协议会先发 `DO_SET_MODE`，正常路径不受影响）、
+  `NAV_TAKEOFF`（带爬升目标时自动进入）、或直接对 App 发 `DO_SET_MODE`
+  offboard/guided。若某路径不设模式直接流指令，会被拒（STATUSTEXT
+  `Virtual stick denied: not in guided mode`，限频 2 s）——联调时看到该文本
+  即说明流指令前缺一次模式设置。
+- **应急接管**：遥控器切档/急停短按/长按返航夺走控制权时，App 自动退出 guided
+  并锁存（发 STATUSTEXT `Guided interrupted: RC took control`，GUIDED 按钮变
+  灰）；此后 MAVSDK 需重新 `Offboard::start()` 才能拿回控制。起飞爬升结束
+  （飞行模式回到位置模式）与落地也会自动退出 guided。
 
 ## 2. 链路总览
 

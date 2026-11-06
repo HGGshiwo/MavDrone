@@ -641,18 +641,18 @@ open class TakeOffWidget @JvmOverloads constructor(
                     TakeOffLandingState.FORCED_AUTO_LANDING,
                     TakeOffLandingState.WAITING_FOR_LANDING_CONFIRMATION,
                     TakeOffLandingState.UNSAFE_TO_LAND -> cancelLandActionIcon
-                    else -> null
+                    // 断连/返航中不再隐藏: 本机型 KeyConnection 推送时有时无, 断连
+                    // 可能永久持续, 原实现会留下一个不显示的空控件。改为常显置灰
+                    // (图标照画, isEnabled=false 禁点, 由 updateImageAlpha 压暗)
+                    TakeOffLandingState.DISCONNECTED -> takeOffActionIcon
+                    TakeOffLandingState.RETURNING_TO_HOME -> landActionIcon
                 })
         isEnabled = !(takeOffLandingState == TakeOffLandingState.TAKE_OFF_DISABLED ||
                 takeOffLandingState == TakeOffLandingState.LAND_DISABLED ||
-                takeOffLandingState == TakeOffLandingState.FORCED_AUTO_LANDING)
-        visibility =
-                if (takeOffLandingState == TakeOffLandingState.RETURNING_TO_HOME ||
-                        takeOffLandingState == TakeOffLandingState.DISCONNECTED) {
-                    View.GONE
-                } else {
-                    View.VISIBLE
-                }
+                takeOffLandingState == TakeOffLandingState.FORCED_AUTO_LANDING ||
+                takeOffLandingState == TakeOffLandingState.DISCONNECTED ||
+                takeOffLandingState == TakeOffLandingState.RETURNING_TO_HOME)
+        visibility = View.VISIBLE
         updateImageAlpha()
 
         when (takeOffLandingState) {

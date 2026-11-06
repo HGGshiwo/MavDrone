@@ -195,6 +195,28 @@
             app:layout_constraintVertical_bias="0.3"
             tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
 
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btn_guided_mode"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginTop="5dp"
+            android:layout_marginBottom="5dp"
+            android:background="#444444"
+            android:enabled="false"
+            android:maxLines="1"
+            android:padding="3dp"
+            android:text="GUIDED"
+            android:textColor="@android:color/white"
+            android:textSize="10sp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintDimensionRatio="@string/uxsdk_widget_default_ratio"
+            app:layout_constraintHeight_percent="0.1"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/widget_take_off"
+            app:layout_constraintVertical_bias="0"
+            tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+
         <nl.wur.mavdrone.widgets.MissionControlWidget
             android:id="@+id/widget_mission_control"
             android:layout_width="wrap_content"
@@ -226,7 +248,7 @@
             app:layout_constraintDimensionRatio="@string/uxsdk_widget_default_ratio"
             app:layout_constraintHeight_percent="0.1"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/widget_take_off"
+            app:layout_constraintTop_toBottomOf="@+id/btn_guided_mode"
             app:layout_constraintVertical_bias="0"
             tools:ignore="TouchTargetSizeCheck,SpeakableTextPresentCheck" />
 

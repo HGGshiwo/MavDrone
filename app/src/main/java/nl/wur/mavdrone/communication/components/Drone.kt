@@ -62,6 +62,8 @@ import io.dronefleet.mavlink.standard.MavState
 import io.dronefleet.mavlink.standard.MavType
 import io.dronefleet.mavlink.util.EnumValue
 
+import nl.wur.mavdrone.MavManager.MavlinkManagerCommunicationModel.GuidedModeUpdated
+import nl.wur.mavdrone.MavManager.MavlinkManagerCommunicationModel.SetGuidedMode
 import nl.wur.mavdrone.communication.MavConnection
 import nl.wur.mavdrone.communication.components.impl.DeviceHealth
 import nl.wur.mavdrone.communication.components.impl.DroneParameters
@@ -164,6 +166,21 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     var flightMode: FlightMode = FlightMode.UNKNOWN
         private set
 
+    // GUIDED 是本应用"地面站接管"的权威状态: 虚拟摇杆只在 guided 下准入。
+    // 进入: GUIDED 按钮 / GCS DO_SET_MODE(offboard|guided) / NAV_TAKEOFF 带爬升目标
+    // 退出: 再次点击按钮(回 PosHold) / 飞行模式回到手动系(MANUAL/ATTI/GPS_NORMAL 等,
+    // 覆盖起飞结束与 RC 切档) / RC 夺权(切档/急停/一键返航, 带锁存) / 落地
+    // 注意: offboard setpoint 超时自动释放不退出 guided —— GCS 可能只是暂停续流,
+    // 此时退出会造成恢复流指令被误拦
+    @Volatile
+    private var guidedActive = false
+
+    // RC 夺权锁存: 夺权后禁止任何非显式路径重新进入 guided, 防止 GO_HOME 等
+    // 自动模式分支在事件乱序下把 guided 拉回去; 只有点击 GUIDED 按钮或 GCS
+    // 显式 DO_SET_MODE 才复位
+    @Volatile
+    private var guidedSuppressedByRC = false
+
     private var mavLandedState = MavLandedState.MAV_LANDED_STATE_UNDEFINED
 
     private var disArmAfterLandTimeout: Float
@@ -255,6 +272,20 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
         watchLandingConfirmation()
 
+        // GUIDED 按钮(App 本地)请求经 MavManager 服务总线转发到这里
+        connectionWR.get()?.let { connection ->
+            compositeDisposable.add(
+                connection.mavlinkThreadCommunicationSubject
+                    .ofType(SetGuidedMode::class.java)
+                    .observeOn(Schedulers.newThread())
+                    .subscribeOn(Schedulers.newThread())
+                    .subscribe(
+                        { model -> setGuidedFromButton(model.enabled) },
+                        { error -> RXUtils.handleError(error) }
+                    )
+            )
+        }
+
         compositeDisposable.add(djiGetValue(ProductKey.KeyProductType).subscribe { p: ProductType -> productType = p })
 
         SimulatorManager.getInstance().addSimulatorStateListener(simulatorStatusListener)
@@ -267,17 +298,21 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                     removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
                     removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
                     setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_MANUAL)
+                    exitGuided("manual mode")
                 }
 
                 FlightMode.ATTI -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
                     removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
                     setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_ALTCTL)
+                    exitGuided("attitude mode")
                 }
 
                 FlightMode.GPS_NORMAL, FlightMode.GPS_TRIPOD, FlightMode.GPS_SPORT, FlightMode.TAKE_OFF_READY -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_STABILIZE_ENABLED)
                     setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_POSCTL)
+                    // 覆盖两个场景: 起飞(含爬升)结束回到位置模式, 以及 RC 切档夺权
+                    exitGuided("position mode")
                 }
                 FlightMode.MOTOR_START -> {
                     addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_SAFETY_ARMED)
@@ -347,6 +382,12 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
 
                 // When landing and we have set automatic disarm, add automatic disarm disposable.
                 oldValue?.let { ov ->
+                    if (ov && !nv) {
+                        // 落地即退出 guided(静默, 仅同步按钮/状态), 避免降落完成后
+                        // 按钮仍显示接管中
+                        exitGuided("landed")
+                    }
+
                     if (ov && !nv  && disArmAfterLandTimeout > 0) {
                         mavLandedState = MavLandedState.MAV_LANDED_STATE_ON_GROUND
 
@@ -458,6 +499,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
     }
 
     override fun destroy() {
+        exitGuided("component destroyed")
         virtualStickManager.stopAll()
         SimulatorManager.getInstance().removeSimulatorStateListener(simulatorStatusListener)
         missionManager.destroy()
@@ -698,11 +740,17 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                         compositeDisposable.add(
                             performStartTakeoff()
                                 .subscribe(
-                                    {
-                                        sendMessage(commandAccepted(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId))
-                                        takeOffTime = System.currentTimeMillis() * 1000
-                                        climbTarget?.let { virtualStickManager.climbToHeight(it) }
-                                    },
+                                {
+                                    sendMessage(commandAccepted(MavCmd.MAV_CMD_NAV_TAKEOFF, msg.originSystemId, msg.originComponentId))
+                                    takeOffTime = System.currentTimeMillis() * 1000
+                                    climbTarget?.let {
+                                        // 爬升由虚拟摇杆完成, 这里先行进入 guided —— 若等
+                                        // AUTO_TAKE_OFF 模式推送再进, 起飞指令回调可能先到,
+                                        // 爬升请求会被 guided 门控误拦
+                                        enterGuided("GCS takeoff")
+                                        virtualStickManager.climbToHeight(it)
+                                    }
+                                },
                                     { error ->
                                         onError(
                                             error,
@@ -1184,6 +1232,70 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
         }
     }
 
+    fun isGuidedActive(): Boolean = guidedActive
+
+    fun enterGuided(source: String) {
+        guidedSuppressedByRC = false
+        if (guidedActive) {
+            return
+        }
+
+        guidedActive = true
+        addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+        setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_OFFBOARD)
+        setCustomSubMode(SUB_MODE.INVALID)
+        log.i("Guided mode entered ($source)")
+        emitGuidedState()
+    }
+
+    // 释放虚拟摇杆(若有), 清 guided 状态与标志并同步 UI; 自定义模式由调用方
+    // 决定: 按钮退出回 PosHold, 飞行模式分支沿用各自的映射
+    fun exitGuided(source: String, notifyGCS: Boolean = false) {
+        if (!guidedActive) {
+            return
+        }
+
+        guidedActive = false
+        removeMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
+        virtualStickManager.stopAll()
+        log.i("Guided mode exited ($source)")
+
+        if (notifyGCS) {
+            sendMessage(
+                Statustext.builder()
+                    .severity(MavSeverity.MAV_SEVERITY_WARNING)
+                    .text(MavlinkTexts.truncateStatustext("Guided interrupted: RC took control"))
+                    .build()
+            )
+        }
+        emitGuidedState()
+    }
+
+    // 虚拟摇杆组件回调: RC 通过切档/急停/一键返航/低电量行为等夺走控制权
+    // (FlightControlAuthorityChangeReason 除 MSDK_REQUEST/UNKNOWN 之外的全部取值)
+    fun onControlAuthorityTakenByRC(reason: String) {
+        guidedSuppressedByRC = true
+        if (guidedActive) {
+            exitGuided("RC takeover ($reason)", notifyGCS = true)
+        } else {
+            log.i("Control authority taken by RC ($reason), guided latch armed")
+        }
+    }
+
+    private fun setGuidedFromButton(enabled: Boolean) {
+        if (enabled) {
+            enterGuided("GUIDED button")
+        } else {
+            exitGuided("GUIDED button")
+            setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_POSCTL)
+            setCustomSubMode(SUB_MODE.INVALID)
+        }
+    }
+
+    private fun emitGuidedState() {
+        connectionWR.get()?.mavlinkThreadCommunicationSubject?.onNext(GuidedModeUpdated(guidedActive))
+    }
+
     private fun changeFlightMode(mavMode: Int, customMode: Int, subMode: Int, systemId: Int, componentId: Int) {
         // Set the Mavlink modes
         val mavModeFlagList = enumToList(EnumValue.create(MavModeFlag::class.java, mavMode), MavModeFlag::class.java)
@@ -1214,6 +1326,7 @@ class Drone(connectionWR: WeakReference<MavConnection>) : MavBaseComponent(
                 addMavModeFlag(MavModeFlag.MAV_MODE_FLAG_GUIDED_ENABLED)
                 setCustomMode(MAIN_MODE.PX4_CUSTOM_MAIN_MODE_OFFBOARD)
                 setCustomSubMode(SUB_MODE.INVALID)
+                enterGuided("GCS set mode")
                 sendMessage(commandAccepted(MavCmd.MAV_CMD_DO_SET_MODE, systemId, componentId))
             } else if (customFlightMode == MAIN_MODE.PX4_CUSTOM_MAIN_MODE_AUTO && customSubFlightMode == SUB_MODE.PX4_CUSTOM_SUB_MODE_AUTO_MISSION) {
                 // If there is a mission present and current status is paused, resume mission

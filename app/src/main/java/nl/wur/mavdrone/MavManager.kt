@@ -126,6 +126,11 @@ class MavManager private constructor() {
         mService?.mavlinkCommunicationSubject?.onNext(MavlinkManagerCommunicationModel.StopMission(true))
     }
 
+    /** GUIDED 按钮(App 本地)请求进入/退出 guided 模式, 由 Drone 组件消费 */
+    fun setGuidedMode(enabled: Boolean) {
+        mService?.mavlinkCommunicationSubject?.onNext(MavlinkManagerCommunicationModel.SetGuidedMode(enabled))
+    }
+
     private fun setupDataProcessors() {
         if (mService == null) {
             log.e("Cannot setup data processors, since service is not available!")
@@ -154,6 +159,10 @@ class MavManager private constructor() {
         }
         addDataProcessor(MavlinkManagerCommunicationModel.GeoFenceMissionLoaded::class.java) { model ->
             mavlinkStatus.geoFenceMissionLoaded = model.loaded
+            mavlinkStatusListeners.forEach { it.onStatusChanged(mavlinkStatus) }
+        }
+        addDataProcessor(MavlinkManagerCommunicationModel.GuidedModeUpdated::class.java) { model ->
+            mavlinkStatus.guidedActive = model.active
             mavlinkStatusListeners.forEach { it.onStatusChanged(mavlinkStatus) }
         }
         addDataProcessor(MavlinkManagerCommunicationModel.ShouldShowWarning::class.java) { model ->
@@ -205,6 +214,11 @@ class MavManager private constructor() {
         data class WaypointMissionLoaded(val loaded: Boolean, val waypointMission: String?) : MavlinkManagerCommunicationModel()
         data class GeoFenceMissionLoaded(val loaded: Boolean) : MavlinkManagerCommunicationModel()
 
+        /** UI -> Drone: GUIDED 按钮请求 */
+        data class SetGuidedMode(val enabled: Boolean) : MavlinkManagerCommunicationModel()
+        /** Drone -> UI: guided 实际状态变化(含 GCS 指令/RC 夺权等一切来源) */
+        data class GuidedModeUpdated(val active: Boolean) : MavlinkManagerCommunicationModel()
+
         data class StartMission(val shouldStart: Boolean) : MavlinkManagerCommunicationModel()
         data class PauseMission(val shouldPause: Boolean) : MavlinkManagerCommunicationModel()
         data class ResumeMission(val shouldResume: Boolean) : MavlinkManagerCommunicationModel()
@@ -238,7 +252,8 @@ class MavManager private constructor() {
         var missionState: CurrentMissionState = CurrentMissionState.NO_MISSION,
         var waypointMissionLoaded: Boolean = false,
         var loadedWaypointMission: String? = null,
-        var geoFenceMissionLoaded: Boolean = false) {
+        var geoFenceMissionLoaded: Boolean = false,
+        var guidedActive: Boolean = false) {
         fun reset() {
             this.isServerRunning = false
             this.serverIPAddress = null
@@ -249,6 +264,7 @@ class MavManager private constructor() {
             this.waypointMissionLoaded = false
             this.loadedWaypointMission = null
             this.geoFenceMissionLoaded = false
+            this.guidedActive = false
         }
     }
 

@@ -58,6 +58,8 @@ MavDrone/
 | 下降冻结告警：检测"offboard 持续下令下降（vz ≥ 0.15 m/s）+ 实际垂直速度为零 + 相对高度 ≤ 2 m"持续 3 秒，发 `STATUSTEXT`（WARNING）提示地面站固件已忽略下降指令、应切换 LAND。只告警不接管控制，切 LAND 的决策权在地面站 | `communication/components/Drone.kt` |
 | 近地冻结根因修复（DJI 客服确认）：消费机型的虚拟摇杆近地下降被**下视避障 + 降落保护**两层冻结。虚拟摇杆接管期间自动关闭 `KeyDownwardsAvoidanceEnable` 与 `KeyLandingProtectionEnabled`，归还时自动恢复；新增参数 `VS_LAND_PROT`（默认开）控制该行为，仅对下一次接管生效 | `communication/components/impl/VirtualStickManager.kt`、`DroneParameters.kt` |
 | 解锁命令 `MAV_CMD_COMPONENT_ARM_DISARM` 在执行前先运行解锁前检测：存在失败项时发送 `PreArm: ` 文本并拒绝解锁 | `communication/components/Drone.kt` |
+| 新增主界面 GUIDED 按钮（左侧按钮组：起飞/降落 → **GUIDED** → 返航）：显示**实际** guided 状态（高亮=接管中、灰=未接管、未连接灰置不可点），点击切换；只有 guided 状态下虚拟摇杆才准入（offboard 速度流、起飞爬升），拒绝时限频（2 s）发 `STATUSTEXT`。guided 进入/退出为显式托管——进入：按钮 / GCS `DO_SET_MODE`（offboard 或 ArduPilot 风格 guided）/ `NAV_TAKEOFF` 带爬升目标（先行进入，等 AUTO_TAKE_OFF 推送会有竞态）；退出：再次点击（回 PosHold，即模式码 3，ArduPilot 风格地面站显示 PosHold）/ 飞行模式回到手动系（覆盖起飞结束与 RC 切档）/ RC 夺权（切档、急停、一键返航等 `FlightControlAuthorityChangeReason` 非本应用来源，带锁存防事件乱序，`STATUSTEXT` 通知地面站）/ 落地。offboard setpoint 超时自动释放**不**退出 guided（GCS 可能只是暂停续流，退出会造成恢复指令被误拦） | `communication/components/Drone.kt`、`impl/VirtualStickManager.kt`、`MavManager.kt`、`MainActivity.kt`、`activity_main.xml` |
+| 起飞/降落/返航按钮改为**常显置灰**：uxsdk 内部想让按钮隐藏时强制 `VISIBLE` + 不可点（alpha 0.4），可用性判断完全沿用 uxsdk 内部状态机；根治 `KeyConnection` 推送缺失导致起飞按钮停留在初始 GONE（见已知问题 2）。FPV 全屏模式不受影响 | `MainActivity.kt` |
 | 主界面固定为横屏，消除旋转屏幕导致的界面重建崩溃 | `app/src/main/AndroidManifest.xml` |
 | 模拟器默认配置写死为：纬度 30.11269、经度 120.1429、卫星数 20（面板仍可临时调整） | `uxsdk/.../simulatorcontrol/SimulatorControlWidget.kt` |
 
@@ -126,8 +128,19 @@ MavDrone/
    - `Prearm checks passed` / `Cannot arm drone, prearm checks failed`：解锁前检测结果；
    - `Start virtual stick climb to ...` / `Climb height of ... reached` / `Climb to ... failed`：虚拟摇杆爬升过程；
    - `Descent blocked by landing protection at ... m`：下降被近地保护冻结（详见注意事项 10）；
+   - `Network interfaces: ...` / `Selected server IP: ...`：本机网卡候选与最终选定的 Server address（排查"连不上"先看这两条）；
+   - `Guided mode entered (...)` / `Guided mode exited (...)`：guided 状态切换及来源（GUIDED 按钮 / GCS set mode / GCS takeoff / RC takeover 等）；
+   - `Guided interrupted: RC took control`：RC 夺权（切档/急停/一键返航等）强制退出 guided，同时锁存；
+   - `Virtual stick denied: not in guided mode`：非 guided 状态下的虚拟摇杆请求被拒（限频 2 s 一条）；
+   - `widget_take_off unavailable: graying out` / `... available`：起飞/降落/返航按钮置灰与恢复（uxsdk 想隐藏时改为置灰显示）；
    - `Cannot send message ...`：某条消息构建或发送异常。
 
 9. **工作区中的其他既有调整**（目标系统版本、MultiDex、地图组件地图样式等）不属于本文档记录范围。
 
 10. **近地保护会无提示冻结一切下降指令（bag 实测，2026-10-10；根因已由 DJI 客服确认）。** Mini 4 Pro 固件在气压相对高度约 0.6-0.8 m（真实离地约 0.3 m）处冻结一切非 auto-landing 的下降指令（虚拟摇杆、offboard 均然），且此场景下**不置位** `KeyIsLandingConfirmationNeeded`。根因是**下视避障 + 降落保护两层门控**：行业机只需关下避障；消费机型（Mini 4 Pro/Mini 3/Mini 3 Pro）需同时关闭降落保护（`FlightAssistantKey.KeyLandingProtectionEnabled`）。本 App 已在虚拟摇杆接管期间自动关闭两者、归还时恢复（参数 `VS_LAND_PROT`，默认开）。门控触发时的行为特征（供历史日志对照）：**悬停没有超时兜底，不会自行恢复**——实测两次均是人工在 App 端手动点降落才恢复下降落地（日志仅见 `AUTO_LANDING` 模式切换，此前无任何 MAVLink 命令）；期间气压高度读数死钉不变（0.800/0.600 恒定）。保护关闭后虚拟摇杆应能正常降到底，触地电机停止由固件落地自动停桨完成。
+
+11. **Server address 的选取（修复"显示 172/10 开头连不上"）。** 界面显示的 Server address 与 `VIDEO_STREAM_INFORMATION` 中的 rtsp 地址取自本机网卡枚举：优先 `wlan*`/`eth*`/`ap*`/`swlan*` 接口（WiFi/USB 以太网/热点），其次其他接口上的私网地址（日志关键字见注意事项 8），界面 IP 在每轮等待地面站连接时刷新。历史版本取的是系统默认路由网络（`activeNetwork`）的第一个 IPv4，遥控器开启蜂窝数据（10.x）、USB 网络共享或 VPN（172.16-31.x）时显示的就是地面站不可达的地址，照抄进 `router.conf`/QGC 自然连不上；而 MAVLink 服务端实际绑定 `0.0.0.0:5760`，只要填入 WiFi 网段内的正确地址就能连通。排查方法：对照 App 显示 IP 与 `adb shell ip addr show wlan0`；确认遥控器与地面站接入同一 WiFi，必要时关闭蜂窝数据/VPN 后重开 App。相机组件在每次地面站建立连接时重建，rtsp 地址会随最新选取结果重新生成。
+
+12. **GUIDED 按钮与虚拟摇杆准入。** 左侧按钮组的 GUIDED 键显示实际 guided 状态并点击切换（非 guided → 进入 → 高亮；再点 → 退出回 PosHold，即模式码 3/`PX4_CUSTOM_MAIN_MODE_POSCTL`，ArduPilot 风格地面站显示为 PosHold——POSCTL 与 PosHold 是同一 MAVLink 模式码的两种叫法）。只有 guided 状态下虚拟摇杆才响应：地面站需先发 `DO_SET_MODE` OFFBOARD/GUIDED（MAVSDK `Offboard::start` 协议保证）或 `NAV_TAKEOFF`（带爬升目标）才能获得虚拟摇杆控制；不设模式直接流 `SET_POSITION_TARGET` 会被拒绝（限频 `STATUSTEXT` 提示，属设计意图）。guided 自动退出的情形：飞行模式回到手动系（含起飞爬升结束）、RC 夺权（遥控器切档/急停/长按返航——同时锁存，之后只有 GUIDED 按钮或显式 `DO_SET_MODE` 能重新进入）、落地。offboard 暂停续流（>2 s 停发）只释放摇杆不退 guided，恢复发流会自动重新接管，不算误拦。注意 GCS 心跳里的模式位与按钮相互独立：RTH/航线任务期间心跳显示 RTL/MISSION（固件自动化），按钮为灰——此时虚拟摇杆本就不适用。
+
+13. **起飞/降落/返航按钮常显、置灰代替隐藏。** uxsdk 认为按钮不可用时（未连接、电机启动中、Home 点未记录等）不再让它消失，而是保持显示并置灰（半透明、不可点）；由于 `KeyConnection` 推送在本机型时有时无（已知问题 2），置灰状态可能滞后于真实状态，以地面站遥测为准。

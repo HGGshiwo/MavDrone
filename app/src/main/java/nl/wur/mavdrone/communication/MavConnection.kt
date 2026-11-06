@@ -53,7 +53,6 @@ class MavConnection(
 
     override fun run() {
         try {
-            val hostAddress = getLocalWifiIpAddress(context) + ":" + connectionInformation.port
             server = ServerSocket()
             server!!.reuseAddress = true
             server!!.bind(java.net.InetSocketAddress(connectionInformation.port))
@@ -61,6 +60,9 @@ class MavConnection(
             while (!currentThread().isInterrupted) {
                 LOG.i("Waiting for connection")
 
+                // 每轮 accept 前重新取本机 IP: 网络切换(蜂窝/VPN/WiFi)后界面显示随之更新,
+                // 无需重启 server
+                val hostAddress = getLocalWifiIpAddress(context) + ":" + connectionInformation.port
                 mavlinkThreadCommunicationSubject.onNext(MavlinkServerRunning(true, hostAddress))
                 val socket = server!!.accept()
 

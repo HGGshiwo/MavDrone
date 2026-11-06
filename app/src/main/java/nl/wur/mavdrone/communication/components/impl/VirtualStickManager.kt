@@ -10,6 +10,7 @@ import kotlin.math.sin
 import dji.sdk.keyvalue.key.FlightAssistantKey
 import dji.sdk.keyvalue.key.KeyTools
 import dji.sdk.keyvalue.value.flightcontroller.FlightCoordinateSystem
+import dji.sdk.keyvalue.value.flightcontroller.FlightControlAuthorityChangeReason
 import dji.sdk.keyvalue.value.flightcontroller.FlightMode
 import dji.sdk.keyvalue.value.flightcontroller.RollPitchControlMode
 import dji.sdk.keyvalue.value.flightcontroller.VerticalControlMode
@@ -73,6 +74,9 @@ class VirtualStickManager(
     @Volatile
     private var lastSetpointMillis = 0L
 
+    @Volatile
+    private var lastDenialAnnounceMillis = 0L
+
     init {
         if (SDK_INITIALIZED.compareAndSet(false, true)) {
             DJIVirtualStickManager.getInstance().init()
@@ -83,8 +87,17 @@ class VirtualStickManager(
                 log.i("Virtual stick state: enable=${state.isVirtualStickEnable}, authority=${state.currentFlightControlAuthorityOwner}")
             }
 
-            override fun onChangeReasonUpdate(reason: dji.sdk.keyvalue.value.flightcontroller.FlightControlAuthorityChangeReason) {
+            override fun onChangeReasonUpdate(reason: FlightControlAuthorityChangeReason) {
                 log.i("Virtual stick authority change reason: $reason")
+
+                // MSDK_REQUEST 是本应用自己的 enable/release; UNKNOWN 为噪声。
+                // 其余(RC 切档/急停/一键返航/RC_NOT_P_MODE/低电量行为等)都是
+                // RC/固件夺走控制权, 通知 Drone 退出 guided 并锁存
+                if (reason != FlightControlAuthorityChangeReason.MSDK_REQUEST
+                    && reason != FlightControlAuthorityChangeReason.UNKNOWN
+                ) {
+                    droneWR.get()?.onControlAuthorityTakenByRC(reason.name)
+                }
             }
         })
     }
@@ -97,6 +110,12 @@ class VirtualStickManager(
      * auto takeoff finished. Fire and forget; the result is reported as STATUSTEXT.
      */
     fun climbToHeight(targetHeight: Float) {
+        if (!isGuidedActive()) {
+            log.w("Climb denied: not in guided mode")
+            sendStatus(MavSeverity.MAV_SEVERITY_WARNING, "Takeoff: climb denied, not in guided mode")
+            return
+        }
+
         if (climbDisposable != null) {
             log.w("Climb already in progress, ignoring request for ${targetHeight}m")
             return
@@ -136,6 +155,14 @@ class VirtualStickManager(
      * the stick once the setpoints stop coming.
      */
     fun feedVelocitySetpoint(forward: Double, right: Double, down: Double, yawRateDeg: Double) {
+        // guided 门控: 虚拟摇杆只在 guided 状态下准入(GUIDED 按钮/GCS DO_SET_MODE/
+        // NAV_TAKEOFF 进入); 释放路径(stopAll/stopClimb)不受限
+        if (!isGuidedActive()) {
+            log.w("Velocity setpoint denied: not in guided mode")
+            announceDenial()
+            return
+        }
+
         // The tested firmware ignores the requested BODY coordinate and interprets the
         // horizontal velocity in DJI's GROUND frame (X east, Y north), so rotate the
         // body-frame setpoint into that frame ourselves; requesting GROUND explicitly
@@ -232,6 +259,11 @@ class VirtualStickManager(
     // until it accepts.
     private fun enableVirtualStick(): Completable =
         Completable.create { emitter ->
+            if (!isGuidedActive()) {
+                emitter.tryOnError(IllegalStateException("Virtual stick denied: not in guided mode"))
+                return@create
+            }
+
             emitter.setDisposable(
                 Observable.interval(0, STICK_ENABLE_RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS)
                     .subscribeOn(Schedulers.newThread())
@@ -295,6 +327,18 @@ class VirtualStickManager(
 
     private fun isDroneFlying(drone: Drone): Boolean =
         drone.isFlying || (drone.aircraftLocation?.altitude ?: 0.0) > MIN_TAKEOFF_HEIGHT
+
+    private fun isGuidedActive(): Boolean = droneWR.get()?.isGuidedActive() ?: false
+
+    // 拒绝 STATUSTEXT 限频, 避免 GCS 高频流指令时刷屏
+    private fun announceDenial() {
+        val now = System.currentTimeMillis()
+        if (now - lastDenialAnnounceMillis < DENIAL_ANNOUNCE_INTERVAL_MS) {
+            return
+        }
+        lastDenialAnnounceMillis = now
+        sendStatus(MavSeverity.MAV_SEVERITY_WARNING, "Virtual stick denied: not in guided mode")
+    }
 
     // In vertical position mode the vertical value is the target height above the
     // takeoff location; pitch/roll/yaw are held at standstill (frame irrelevant for
@@ -395,6 +439,8 @@ class VirtualStickManager(
 
         // Release the virtual stick when no offboard setpoint arrives for this long
         private const val SETPOINT_TIMEOUT_MS = 2000L
+
+        private const val DENIAL_ANNOUNCE_INTERVAL_MS = 2000L
 
         private val SDK_INITIALIZED = AtomicBoolean(false)
     }
