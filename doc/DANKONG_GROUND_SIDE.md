@@ -26,16 +26,16 @@
   （172.16-31.x）时显示的就是不可达地址；现版本已改为优先取 `wlan*`/`eth*`
   接口并在每轮等待连接时刷新。服务端实际绑定 `0.0.0.0:5760`，用
   `adb shell ip addr show wlan0` 的地址填 `mavsdk_url` 即可连接。
-- **offboard/虚拟摇杆有 guided 准入门控**：App 界面左侧新增 GUIDED 按钮，只有
-  guided 状态下才响应速度流与起飞爬升。进入 guided 的途径：MAVSDK
-  `Offboard::start()`（协议会先发 `DO_SET_MODE`，正常路径不受影响）、
-  `NAV_TAKEOFF`（带爬升目标时自动进入）、或直接对 App 发 `DO_SET_MODE`
-  offboard/guided。若某路径不设模式直接流指令，会被拒（STATUSTEXT
-  `Virtual stick denied: not in guided mode`，限频 2 s）——联调时看到该文本
-  即说明流指令前缺一次模式设置。
+- **offboard/虚拟摇杆有 guided 准入门控**：App 界面底部中央（HSI 上方）新增
+  GUIDED/POSHOLD 分段切换开关，只有 guided 状态下才响应速度流与起飞爬升。
+  进入 guided 的途径：MAVSDK `Offboard::start()`（协议会先发 `DO_SET_MODE`，
+  正常路径不受影响）、`NAV_TAKEOFF`（带爬升目标时自动进入）、或直接对 App 发
+  `DO_SET_MODE` offboard/guided。若某路径不设模式直接流指令，会被拒
+  （STATUSTEXT `Virtual stick denied: not in guided mode`，限频 2 s）——联调时
+  看到该文本即说明流指令前缺一次模式设置。
 - **应急接管**：遥控器切档/急停短按/长按返航夺走控制权时，App 自动退出 guided
-  并锁存（发 STATUSTEXT `Guided interrupted: RC took control`，GUIDED 按钮变
-  灰）；此后 MAVSDK 需重新 `Offboard::start()` 才能拿回控制。起飞爬升结束
+  并锁存（发 STATUSTEXT `Guided interrupted: RC took control`，开关自动跳回
+  POSHOLD）；此后 MAVSDK 需重新 `Offboard::start()` 才能拿回控制。起飞爬升结束
   （飞行模式回到位置模式）与落地也会自动退出 guided。
 
 ## 2. 链路总览

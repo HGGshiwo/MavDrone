@@ -2,6 +2,7 @@ package dji.v5.ux.core.widget.hsi
 
 import dji.sdk.keyvalue.key.*
 import dji.sdk.keyvalue.value.common.LocationCoordinate2D
+import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
 import dji.sdk.keyvalue.value.rtkmobilestation.RTKTakeoffAltitudeInfo
 import dji.v5.manager.KeyManager
@@ -37,6 +38,11 @@ open class AttitudeDisplayModel constructor(
     val rtkTakeoffAltitudeInfoProcessor = DataProcessor.create(RTKTakeoffAltitudeInfo())
 
     val aircraftLocationDataProcessor = DataProcessor.create(LocationCoordinate2D(Double.NaN, Double.NaN))
+
+    // 3D 位置(altitude 为相对起飞点高度): 本机型上 KeyAltitude/2D KeyAircraftLocation
+    // 可能不推送(README 已知问题 2), 该键与 MAVLink 桥接同源、已验证推送, 作为高度
+    // 与经纬度的可靠来源
+    val aircraftLocation3DProcessor = DataProcessor.create(LocationCoordinate3D(Double.NaN, Double.NaN, Double.NaN))
     val perceptionInfoProcessor = DataProcessor.create(PerceptionInfo())
     val radarInfoProcessor = DataProcessor.create(RadarInformation())
     val perceptionObstacleDataProcessor = DataProcessor.create(ObstacleData())
@@ -79,6 +85,9 @@ open class AttitudeDisplayModel constructor(
         bindDataProcessor(
             KeyTools.createKey(
                 FlightControllerKey.KeyAircraftLocation), aircraftLocationDataProcessor)
+        bindDataProcessor(
+            KeyTools.createKey(
+                FlightControllerKey.KeyAircraftLocation3D), aircraftLocation3DProcessor)
 
 
         perceptionManager.addPerceptionInformationListener(perceptionInformationListener)

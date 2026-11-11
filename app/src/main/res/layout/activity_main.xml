@@ -195,36 +195,7 @@
             app:layout_constraintVertical_bias="0.3"
             tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
 
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btn_guided_mode"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginStart="12dp"
-            android:layout_marginTop="5dp"
-            android:layout_marginBottom="5dp"
-            android:background="#444444"
-            android:enabled="false"
-            android:maxLines="1"
-            android:padding="3dp"
-            android:text="GUIDED"
-            android:textColor="@android:color/white"
-            android:textSize="10sp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintDimensionRatio="@string/uxsdk_widget_default_ratio"
-            app:layout_constraintHeight_percent="0.1"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/widget_take_off"
-            app:layout_constraintVertical_bias="0"
-            tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
-
-        <nl.wur.mavdrone.widgets.MissionControlWidget
-            android:id="@+id/widget_mission_control"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_marginBottom="12dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintLeft_toLeftOf="parent" />
+        <!-- 任务控制控件已移除: 任务功能未启用, 原位置由模式切换开关(GUIDED/POSHOLD)替代 -->
 
         <dji.v5.ux.cameracore.widget.cameracontrols.lenscontrol.LensControlWidget
             android:id="@+id/widget_lens_control"
@@ -248,9 +219,42 @@
             app:layout_constraintDimensionRatio="@string/uxsdk_widget_default_ratio"
             app:layout_constraintHeight_percent="0.1"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/btn_guided_mode"
+            app:layout_constraintTop_toBottomOf="@+id/widget_take_off"
             app:layout_constraintVertical_bias="0"
             tools:ignore="TouchTargetSizeCheck,SpeakableTextPresentCheck" />
+
+        <dji.v5.ux.core.ui.component.SegmentedButtonGroup
+            android:id="@+id/mode_toggle_group"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/uxsdk_32_dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginBottom="12dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:uxsdk_checkedItemBackgroundColor="#2196F3">
+
+            <TextView
+                android:id="@+id/btn_mode_guided"
+                android:layout_width="@dimen/uxsdk_76_dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="GUIDED"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                tools:ignore="SpeakableTextPresentCheck" />
+
+            <TextView
+                android:id="@+id/btn_mode_poshold"
+                android:layout_width="@dimen/uxsdk_76_dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:maxLines="1"
+                android:text="POSHOLD"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                tools:ignore="SpeakableTextPresentCheck" />
+        </dji.v5.ux.core.ui.component.SegmentedButtonGroup>
 
         <dji.v5.ux.training.simulatorcontrol.SimulatorControlWidget
             android:id="@+id/widget_simulator_control"
@@ -282,6 +286,8 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <!-- 地图暂不支持, 整块注释; MainActivity 中对应的初始化/生命周期调用与
+             全屏隐藏列表引用已同步注释, 需要恢复时两处一起还原
         <dji.v5.ux.map.MapWidget
             android:id="@+id/widget_map"
             android:layout_width="@dimen/uxsdk_150_dp"
@@ -292,6 +298,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:uxsdk_djiMap_mapType="normal" />
+        -->
 
         <dji.v5.ux.core.panel.systemstatus.SystemStatusListPanelWidget
             android:id="@+id/widget_panel_system_status_list"

@@ -7,8 +7,12 @@ import dji.v5.ux.core.base.widget.ConstraintLayoutWidget
 import dji.v5.ux.core.ui.hsi.dashboard.AttitudeDashBoard
 import android.widget.TextView
 import dji.sdk.keyvalue.value.common.LocationCoordinate2D
+import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
 import dji.sdk.keyvalue.value.rtkmobilestation.RTKTakeoffAltitudeInfo
+import dji.v5.manager.aircraft.simulator.SimulatorManager
+import dji.v5.manager.aircraft.simulator.SimulatorState
+import dji.v5.manager.aircraft.simulator.SimulatorStatusListener
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import dji.v5.ux.core.base.DJISDKModel
 import dji.v5.ux.core.communication.ObservableInMemoryKeyedStore
@@ -52,17 +56,33 @@ open class AttitudeDisplayWidget @JvmOverloads constructor(context: Context?, at
     private var mDroneLocation: LocationCoordinate2D? = null
     private val mCompositeDisposable = CompositeDisposable()
     private val widgetModel = AttitudeDisplayModel(DJISDKModel.getInstance(), ObservableInMemoryKeyedStore.getInstance())
+
+    // 模拟器遥测: 消费机型模拟模式下 DJI 键值可能不推送(README 已知问题 3),
+    // 与 Drone.kt 桥接同源接入 SimulatorManager; positionZ 为 NED z 轴(朝下), 取反
+    private val simulatorStatusListener = SimulatorStatusListener { state ->
+        if (SimulatorManager.getInstance().isSimulatorEnabled) {
+            mAltitude = -state.positionZ.toDouble()
+            state.location?.let { location ->
+                mDroneLocation = LocationCoordinate2D(location.latitude, location.longitude)
+            }
+            widgetModel.altitudeProcessor.onNext(mAltitude)
+            updateAltitude()
+        }
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (!isInEditMode) {
             mAttitudeDashBoard?.setModel(widgetModel)
             widgetModel.setup()
+            SimulatorManager.getInstance().addSimulatorStateListener(simulatorStatusListener)
         }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         if (!isInEditMode) {
+            SimulatorManager.getInstance().removeSimulatorStateListener(simulatorStatusListener)
             widgetModel.cleanup()
         }
     }
@@ -111,9 +131,14 @@ open class AttitudeDisplayWidget @JvmOverloads constructor(context: Context?, at
             mSpeedZ = velocity3D.z.toFloat()
             updateSpeed()
         })
-        //Relative altitude of the aircraft relative to take off location, measured by the barometer, in meters.
-        mCompositeDisposable.add(widgetModel.altitudeProcessor.toFlowable().observeOn(SchedulerProvider.ui()).subscribe { altitude: Double ->
-            mAltitude = altitude
+        // 高度与经纬度改由 3D 位置键驱动: KeyAltitude/2D KeyAircraftLocation 在本机型上
+        // 可能不推送(README 已知问题 2), KeyAircraftLocation3D 与 MAVLink 桥接同源、
+        // 已验证推送; 其 altitude 即相对起飞点高度(DJI 官方语义)
+        mCompositeDisposable.add(widgetModel.aircraftLocation3DProcessor.toFlowable().observeOn(SchedulerProvider.ui()).subscribe { location3D: LocationCoordinate3D ->
+            mAltitude = location3D.altitude
+            mDroneLocation = LocationCoordinate2D(location3D.latitude, location3D.longitude)
+            // 姿态仪表盘(AttitudeDashBoard)消费同一 altitudeProcessor, 同步喂数据
+            widgetModel.altitudeProcessor.onNext(location3D.altitude)
             updateAltitude()
         })
         //RTK起飞高度信息
@@ -124,14 +149,6 @@ open class AttitudeDisplayWidget @JvmOverloads constructor(context: Context?, at
                 mHomePointAltitude = rtkTakeoffAltitudeInfo.altitude
                 updateAltitude()
             })
-        mCompositeDisposable.add(widgetModel.aircraftLocationDataProcessor.toFlowable()
-            .observeOn(SchedulerProvider.ui())
-            .subscribe { locationCoordinate2D: LocationCoordinate2D? ->
-            mDroneLocation = locationCoordinate2D
-            if (mDroneLocation != null) {
-                updateAltitude()
-            }
-        })
     }
 
     override fun getIdealDimensionRatioString(): String? {

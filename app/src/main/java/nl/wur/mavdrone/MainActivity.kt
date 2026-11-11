@@ -36,7 +36,8 @@ import dji.v5.ux.core.util.CameraUtil
 import dji.v5.ux.core.util.DataProcessor
 import dji.v5.ux.core.util.ViewUtil
 import dji.v5.ux.core.widget.fpv.FPVStreamSourceListener
-import dji.v5.ux.mapkit.core.maps.DJIMap
+import dji.v5.ux.core.ui.component.SegmentedButtonGroup
+// import dji.v5.ux.mapkit.core.maps.DJIMap  // 地图暂不支持
 import dji.v5.ux.training.simulatorcontrol.SimulatorControlWidget
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
@@ -53,17 +54,20 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
-    // GUIDED 按钮状态(经 MavlinkStatusListener 同步, 显示实际 guided 状态而非点击意图)
+    // 模式切换开关(GUIDED/POSHOLD)状态: 经 MavlinkStatusListener 同步,
+    // 显示实际 guided 状态而非点击意图
     private var guidedActive = false
     private var guidedButtonConnected = false
-    private val guidedButtonActiveColor = Color.parseColor("#2196F3")
-    private val guidedButtonInactiveColor = Color.parseColor("#444444")
+
+    // SegmentedButtonGroup.check() 会触发点击回调且无法读取当前选中项,
+    // 用上次已应用的选择做防重入: 仅在期望状态变化时才编程选中
+    private var lastAppliedModeSelection: Int? = null
 
     private val mavlinkStatusListener = object : MavManager.MavlinkStatusListener {
         override fun onStatusChanged(status: MavManager.MavlinkStatus) {
             guidedActive = status.guidedActive
             guidedButtonConnected = status.gcsConnected
-            updateGuidedButton()
+            updateModeToggle()
         }
 
         override fun onError(error: RxException) {}
@@ -101,13 +105,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateGuidedButton() {
-        binding.btnGuidedMode.isEnabled = guidedButtonConnected
-        binding.btnGuidedMode.alpha = if (guidedButtonConnected) 1.0f else 0.4f
-        binding.btnGuidedMode.setBackgroundColor(
-            if (guidedActive && guidedButtonConnected) guidedButtonActiveColor
-            else guidedButtonInactiveColor
-        )
+    private fun updateModeToggle() {
+        binding.btnModeGuided.isEnabled = guidedButtonConnected
+        binding.btnModePoshold.isEnabled = guidedButtonConnected
+        binding.modeToggleGroup.alpha = if (guidedButtonConnected) 1.0f else 0.4f
+
+        val desired = if (guidedActive) R.id.btn_mode_guided else R.id.btn_mode_poshold
+        if (lastAppliedModeSelection != desired) {
+            lastAppliedModeSelection = desired
+            binding.modeToggleGroup.check(desired)
+        }
     }
 
     private var lastDevicePosition = ComponentIndexType.UNKNOWN
@@ -157,16 +164,16 @@ class MainActivity : AppCompatActivity() {
         binding.widgetSecondaryFpv.setSurfaceViewZOrderMediaOverlay(true)
 
 
-        binding.widgetMap.initMapLibreMap(applicationContext) { map: DJIMap ->
-            map.uiSettings.setZoomControlsEnabled(false)
-        }
-        binding.widgetMap.onCreate(savedInstanceState)
+        // 地图暂不支持(布局中的 MapWidget 已注释), 需要恢复时与布局一起还原
+        // binding.widgetMap.initMapLibreMap(applicationContext) { map: DJIMap ->
+        //     map.uiSettings.setZoomControlsEnabled(false)
+        // }
+        // binding.widgetMap.onCreate(savedInstanceState)
         window.setBackgroundDrawable(Color.BLACK.toDrawable())
 
         DJINetworkManager.getInstance().addNetworkStatusListener(networkStatusListener)
 
         MavManager.getInstance().addMavlinkStatusListener(mavlinkStatusListener)
-        binding.btnGuidedMode.setBackgroundColor(guidedButtonInactiveColor)
         binding.widgetTakeOff.viewTreeObserver.addOnGlobalLayoutListener(flightButtonEnforcer)
     }
 
@@ -193,9 +200,21 @@ class MainActivity : AppCompatActivity() {
             binding.settingMenuGimbalFineTune.visibility = View.GONE
         }
 
-        binding.btnGuidedMode.setOnClickListener {
-            log.i("GUIDED button clicked, requesting ${if (guidedActive) "exit" else "enter"} guided")
-            MavManager.getInstance().setGuidedMode(!guidedActive)
+        binding.btnModeGuided.setOnClickListener {
+            log.i("Mode toggle clicked: GUIDED")
+            if (guidedActive) {
+                log.i("Already in guided mode, ignoring")
+                return@setOnClickListener
+            }
+            MavManager.getInstance().setGuidedMode(true)
+        }
+        binding.btnModePoshold.setOnClickListener {
+            log.i("Mode toggle clicked: POSHOLD")
+            if (!guidedActive) {
+                log.i("Already not in guided mode, ignoring")
+                return@setOnClickListener
+            }
+            MavManager.getInstance().setGuidedMode(false)
         }
     }
 
@@ -211,14 +230,14 @@ class MainActivity : AppCompatActivity() {
             viewTreeObserver.removeOnGlobalLayoutListener(flightButtonEnforcer)
         }
         MavManager.getInstance().removeMavlinkStatusListener(mavlinkStatusListener)
-        binding.widgetMap.onDestroy()
+        // binding.widgetMap.onDestroy()  // 地图暂不支持
         MediaDataCenter.getInstance().cameraStreamManager.removeAvailableCameraUpdatedListener(availableCameraUpdatedListener)
         DJINetworkManager.getInstance().removeNetworkStatusListener(networkStatusListener)
     }
 
     override fun onResume() {
         super.onResume()
-        binding.widgetMap.onResume()
+        // binding.widgetMap.onResume()  // 地图暂不支持
         compositeDisposable = CompositeDisposable()
         compositeDisposable?.add(
             binding.widgetPanelSystemStatusList.closeButtonPressed()
@@ -274,7 +293,7 @@ class MainActivity : AppCompatActivity() {
 
         KeyManager.getInstance().cancelListen(KeyTools.createKey(RemoteControllerKey.KeyCustomButton1Down), this)
 
-        binding.widgetMap.onPause()
+        // binding.widgetMap.onPause()  // 地图暂不支持
         super.onPause()
         ViewUtil.setKeepScreen(this, false)
     }
@@ -287,9 +306,9 @@ class MainActivity : AppCompatActivity() {
                 binding.widgetFpvInteraction, binding.widgetSecondaryFpv, binding.panelTopBar, binding.widgetRemainingFlightTime,
                 binding.widgetHorizontalSituationIndicator, binding.settingMenuGimbalFineTune, binding.panelNdviCamera, binding.panelVisualCamera,
                 binding.widgetAutoExposureLock, binding.widgetFocusMode, binding.widgetFocusExposureSwitch, binding.widgetCameraControls,
-                binding.widgetFocalZoom, binding.widgetTakeOff, binding.widgetMissionControl, binding.widgetLensControl,
+                binding.widgetFocalZoom, binding.widgetTakeOff, binding.widgetLensControl,
                 binding.widgetReturnToHome, binding.widgetSimulatorControl, binding.widgetMavlinkControl, binding.widgetFpvFlightDisplayWidget,
-                binding.widgetMap, binding.widgetPanelSystemStatusList, binding.btnGuidedMode, binding.manualRightNavSetting
+                binding.widgetPanelSystemStatusList, binding.modeToggleGroup, binding.manualRightNavSetting
             )) {
                 binding.widgetPrimaryFpv.cameraNameTextColor = Color.TRANSPARENT
                 binding.widgetPrimaryFpv.cameraSideTextColor = Color.TRANSPARENT
